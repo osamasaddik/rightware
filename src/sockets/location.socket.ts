@@ -1,99 +1,146 @@
 import { Server, Socket } from "socket.io";
-import jwt from "jsonwebtoken";
-import Captain from "../models/Captain";
-import config from "../config";
 import { UserRole } from "../utils/constants";
 import { APP_MESSAGES } from "../utils/app-messages";
+import { SocketListenEvents, SocketEmitEvents } from "./socket.constants";
+import locationService from "./location.service";
+import { validateRole, validateToken } from "../utils/jwt.utils";
 
 export const setupLocationSocket = (io: Server) => {
   io.on("connection", (socket: Socket) => {
     console.log("New client connected:", socket.id);
 
     // Captain Authentication
-    socket.on("captain:authenticate", async (data: { token: string }) => {
+    socket.on(SocketListenEvents.CAPTAIN_AUTHENTICATE, async (data: { token: string }) => {
+      console.log(`[Socket ${socket.id}] Captain authentication attempt`);
       try {
-        const decoded = jwt.verify(data.token, config.JWT_SECRET) as any;
-        if (decoded.role !== UserRole.CAPTAIN) {
-          socket.emit("auth_error", { message: APP_MESSAGES.AUTH.INVALID_ROLE });
+        if (!data || typeof data !== "object") {
+          console.log(`[Socket ${socket.id}] Authentication failed: Invalid data format`);
+          socket.emit(SocketEmitEvents.AUTH_ERROR, { message: "Invalid data format", success: false });
           return;
         }
 
-        const captain = await Captain.findById(decoded.id);
-        if (!captain || captain.status !== "active") {
-          socket.emit("auth_error", { message: APP_MESSAGES.AUTH.CAPTAIN_INACTIVE });
+        const tokenValidation = validateToken(data.token);
+        if (!tokenValidation.valid) {
+          console.log(`[Socket ${socket.id}] Authentication failed: ${tokenValidation.error?.message}`);
+          socket.emit(SocketEmitEvents.AUTH_ERROR, tokenValidation.error);
           return;
         }
+
+        const decoded = tokenValidation.decoded!;
+        console.log(`[Socket ${socket.id}] Token decoded for user ID: ${decoded.id}, role: ${decoded.role}`);
+
+        const roleValidation = validateRole(decoded.role, UserRole.CAPTAIN);
+        if (!roleValidation.valid) {
+          console.log(`[Socket ${socket.id}] Authentication failed: Invalid role ${decoded.role}`);
+          socket.emit(SocketEmitEvents.AUTH_ERROR, roleValidation.error);
+          return;
+        }
+
+        const captain = await locationService.verifyCaptain(decoded.id);
+
         socket.join(`captain:${captain._id}`);
         // @ts-ignore
         socket.captainId = captain._id.toString();
-        socket.emit("authenticated", { success: true, captainId: captain._id });
-      } catch (err) {
-        socket.emit("auth_error", { message: APP_MESSAGES.AUTH.INVALID_TOKEN });
+        console.log(`[Socket ${socket.id}] Captain ${captain._id} authenticated successfully`);
+        socket.emit(SocketEmitEvents.AUTHENTICATED, { success: true, captainId: captain._id });
+      } catch (err: any) {
+        console.error(`[Socket ${socket.id}] Authentication error:`, err);
+        socket.emit(SocketEmitEvents.AUTH_ERROR, {
+          message: err.message || APP_MESSAGES.AUTH.INVALID_TOKEN,
+          success: false,
+        });
       }
     });
 
     // Captain Location Update
-    socket.on("captain:location_update", async (data: { lat: number; lng: number }) => {
+    socket.on(SocketListenEvents.CAPTAIN_LOCATION_UPDATE, async (data: { lat: number; lng: number }) => {
+      console.log(`[Socket ${socket.id}] Location update received:`, data);
       try {
         // @ts-ignore
         const captainId = socket.captainId;
         if (!captainId) {
-          socket.emit("auth_error", { message: APP_MESSAGES.AUTH.NOT_AUTHORIZED });
+          console.log(`[Socket ${socket.id}] Location update failed: Not authenticated`);
+          socket.emit(SocketEmitEvents.AUTH_ERROR, { message: APP_MESSAGES.AUTH.NOT_AUTHORIZED, success: false });
           return;
         }
 
-        const { lat, lng } = data;
-        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-          socket.emit("validation_error", { message: "Invalid coordinates" });
+        const locationValidation = locationService.validateLocation(data);
+        if (!locationValidation.valid) {
+          console.log(`[Socket ${socket.id}] Location update failed: ${locationValidation.error?.message}`);
+          socket.emit(SocketEmitEvents.VALIDATION_ERROR, locationValidation.error);
           return;
         }
 
-        const captain = await Captain.findById(captainId);
-        if (!captain || captain.status !== "active") {
-          socket.emit("auth_error", { message: APP_MESSAGES.AUTH.CAPTAIN_INACTIVE });
-          socket.disconnect();
-          return;
-        }
+        const { lat, lng } = locationValidation.location!;
+        const result = await locationService.updateCaptainLocation(captainId, lat, lng);
 
-        await Captain.findByIdAndUpdate(captainId, {
-          currentLocation: { lat, lng, updatedAt: new Date() },
-        });
+        console.log(`[Socket ${socket.id}] Location updated for captain ${captainId}: (${lat}, ${lng})`);
 
         // Broadcast to admins
-        io.to("admins").emit("location:updated", {
+        io.to("admins").emit(SocketEmitEvents.LOCATION_UPDATED, {
           captainId,
-          lat,
-          lng,
-          updatedAt: new Date(),
+          ...result,
         });
-      } catch (err) {
-        console.error("Location update error:", err);
+        console.log(`[Socket ${socket.id}] Location broadcast to admins for captain ${captainId}`);
+
+        // Send success confirmation to captain
+        socket.emit(SocketEmitEvents.LOCATION_UPDATE_SUCCESS, {
+          success: true,
+          ...result,
+        });
+      } catch (err: any) {
+        console.error(`[Socket ${socket.id}] Location update error:`, err);
+        socket.emit(SocketEmitEvents.ERROR, {
+          message: err.message || "Failed to update location",
+          success: false,
+        });
+
+        if (err.message.includes("Captain not found") || err.message.includes("inactive")) {
+          socket.disconnect();
+        }
       }
     });
 
     // Admin Join
-    socket.on("admin:join", async () => {
+    socket.on(SocketListenEvents.ADMIN_JOIN, async () => {
+      console.log(`[Socket ${socket.id}] Admin join attempt`);
       try {
         const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+
         if (!token) {
-          socket.emit("auth_error", { message: APP_MESSAGES.AUTH.NOT_AUTHORIZED });
+          console.log(`[Socket ${socket.id}] Admin join failed: No token provided`);
+          socket.emit(SocketEmitEvents.AUTH_ERROR, { message: APP_MESSAGES.AUTH.NOT_AUTHORIZED, success: false });
           return;
         }
 
-        jwt.verify(token as string, config.JWT_SECRET, (err: any, decoded: any) => {
-          if (err || decoded.role !== UserRole.ADMIN) {
-            socket.emit("auth_error", { message: APP_MESSAGES.AUTH.INVALID_TOKEN });
-            return;
-          }
-          socket.join("admins");
-          socket.emit("admin:joined", { success: true });
+        const tokenValidation = validateToken(token);
+        if (!tokenValidation.valid) {
+          console.log(`[Socket ${socket.id}] Admin join failed: ${tokenValidation.error?.message}`);
+          socket.emit(SocketEmitEvents.AUTH_ERROR, tokenValidation.error);
+          return;
+        }
+
+        const decoded = tokenValidation.decoded!;
+        const roleValidation = validateRole(decoded.role, UserRole.ADMIN);
+        if (!roleValidation.valid) {
+          console.log(`[Socket ${socket.id}] Admin join failed: Invalid role ${decoded.role}`);
+          socket.emit(SocketEmitEvents.AUTH_ERROR, roleValidation.error);
+          return;
+        }
+
+        socket.join("admins");
+        console.log(`[Socket ${socket.id}] Admin joined successfully`);
+        socket.emit(SocketEmitEvents.ADMIN_JOINED, { success: true });
+      } catch (err: any) {
+        console.error(`[Socket ${socket.id}] Admin join error:`, err);
+        socket.emit(SocketEmitEvents.AUTH_ERROR, {
+          message: err.message || "Admin join failed",
+          success: false,
         });
-      } catch (err) {
-        socket.emit("auth_error", { message: "Admin join failed" });
       }
     });
 
-    socket.on("disconnect", () => {
+    socket.on(SocketListenEvents.DISCONNECT, () => {
       console.log("Client disconnected:", socket.id);
     });
   });

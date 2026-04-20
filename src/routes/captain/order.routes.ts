@@ -1,9 +1,9 @@
 import { Router } from "express";
 import captainOrderController from "../../controllers/captain/order.controller";
 import { protectedRoute } from "../../middleware/protected";
-import { UserRole, OrderStatus } from "../../utils/constants";
+import { UserRole } from "../../utils/constants";
 import { validate } from "../../middleware/validate";
-import { body } from "express-validator";
+import { updateOrderStatusValidator } from "../../validators/captain/order.validator";
 
 const router = Router();
 
@@ -13,10 +13,6 @@ router.get("/", captainOrderController.getOrders);
 
 router.get("/:id", captainOrderController.getOrderById);
 
-router.patch(
-  "/:id/status",
-  [body("status").isIn(Object.values(OrderStatus)).withMessage("Invalid status value"), validate],
-  captainOrderController.updateOrderStatus,
-);
+router.patch("/:id/status", [...updateOrderStatusValidator, validate], captainOrderController.updateOrderStatus);
 
 export default router;

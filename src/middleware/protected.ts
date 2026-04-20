@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
 import { errorApi } from "../utils/apiResponse";
 import Admin from "../models/Admin";
 import Partner from "../models/Partner";
@@ -7,7 +6,7 @@ import Captain from "../models/Captain";
 import { TokenPayload } from "../types";
 import { APP_MESSAGES } from "../utils/app-messages";
 import { UserRole } from "../utils/constants";
-import config from "../config";
+import { verifyToken } from "../utils/jwt.utils";
 
 type AuthType = "jwt" | "apiKey";
 
@@ -39,7 +38,7 @@ const extractAuthCredentials = (req: Request): AuthCredentials | null => {
 };
 
 const authenticateJWT = async (token: string, req: Request): Promise<void> => {
-  const decoded = jwt.verify(token, config.JWT_SECRET) as TokenPayload;
+  const decoded = verifyToken(token);
 
   switch (decoded.role) {
     case UserRole.ADMIN: {

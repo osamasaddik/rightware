@@ -1,15 +1,10 @@
 import { Router } from "express";
 import captainAuthController from "../../controllers/captain/auth.controller";
 import { validate } from "../../middleware/validate";
-import { body } from "express-validator";
-import { APP_MESSAGES } from "../../utils/app-messages";
+import { loginValidator } from "../../validators/captain/auth.validator";
 
 const router = Router();
 
-router.post(
-  "/login",
-  [body("phone").notEmpty().withMessage(APP_MESSAGES.AUTH.PHONE_REQUIRED), validate],
-  captainAuthController.login,
-);
+router.post("/login", [...loginValidator, validate], captainAuthController.login);
 
 export default router;

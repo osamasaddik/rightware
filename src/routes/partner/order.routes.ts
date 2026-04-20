@@ -3,7 +3,7 @@ import partnerOrderController from "../../controllers/partner/order.controller";
 import { protectedRoute } from "../../middleware/protected";
 import { UserRole } from "../../utils/constants";
 import { validate } from "../../middleware/validate";
-import { body } from "express-validator";
+import { createOrderValidator } from "../../validators/partner/order.validator";
 import rateLimit from "express-rate-limit";
 
 const router = Router();
@@ -21,18 +21,6 @@ router.get("/", partnerOrderController.getOrders);
 
 router.get("/:id", partnerOrderController.getOrderById);
 
-router.post(
-  "/",
-  [
-    body("customerName").notEmpty(),
-    body("customerPhone").matches(/^\+?[0-9]{7,15}$/),
-    body("region").notEmpty(),
-    body("fullAddress").notEmpty(),
-    body("location.lat").isFloat({ min: -90, max: 90 }),
-    body("location.lng").isFloat({ min: -180, max: 180 }),
-    validate,
-  ],
-  partnerOrderController.createOrder,
-);
+router.post("/", [...createOrderValidator, validate], partnerOrderController.createOrder);
 
 export default router;
