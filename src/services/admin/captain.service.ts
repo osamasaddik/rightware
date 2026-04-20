@@ -5,7 +5,7 @@ export class AdminCaptainService {
   async createCaptain(data: any) {
     const existing = await captainRepository.findByPhone(data.phone);
     if (existing) {
-      throw new Error("Captain with this phone already exists");
+      throw new Error(APP_MESSAGES.AUTH.CAPTAIN_EXISTS);
     }
     return await captainRepository.create(data);
   }
@@ -47,7 +47,7 @@ export class AdminCaptainService {
     const captain = await captainRepository.findById(id);
     if (!captain) throw new Error("Captain not found");
     if (captain.status === "active") throw new Error("Captain is already active");
-    
+
     return await captainRepository.update(id, { status: "active" });
   }
 
@@ -55,10 +55,10 @@ export class AdminCaptainService {
     const captain = await captainRepository.findById(id);
     if (!captain) throw new Error("Captain not found");
     if (captain.status === "inactive") throw new Error("Captain is already inactive");
-    
-    return await captainRepository.update(id, { 
+
+    return await captainRepository.update(id, {
       status: "inactive",
-      availability: "offline" 
+      availability: "offline",
     });
   }
 }

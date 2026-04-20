@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import adminAuthService from "../../services/auth/admin.auth.service";
+import adminAuthService from "../../services/admin/auth.service";
 import { success, error } from "../../utils/apiResponse";
 
 export class AdminAuthController {

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import adminCaptainService from "../../services/admin/captain.service";
 import { success, error } from "../../utils/apiResponse";
+import { APP_MESSAGES } from "../../utils/app-messages";
 
 export class AdminCaptainController {
   async createCaptain(req: Request, res: Response) {
@@ -43,7 +44,7 @@ export class AdminCaptainController {
   async deleteCaptain(req: Request, res: Response) {
     try {
       await adminCaptainService.deleteCaptain(req.params.id as string);
-      return success(res, { message: "Captain deleted successfully" });
+      return success(res, { message: APP_MESSAGES.CAPTAIN.DELETED });
     } catch (err: any) {
       return error(res, err.message);
     }

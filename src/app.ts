@@ -5,6 +5,7 @@ import morgan from "morgan";
 import { errorHandler } from "./middleware/errorHandler";
 import adminRoutes from "./routes/admin";
 import partnerRoutes from "./routes/partner";
+import captainRoutes from "./routes/captain";
 import { APP_MESSAGES } from "./utils/app-messages";
 import { APP_ROUTES } from "./routes/app-routes";
 
@@ -20,6 +21,7 @@ const createApp = () => {
   // Routes
   app.use(APP_ROUTES.ADMIN.BASE, adminRoutes);
   app.use(APP_ROUTES.PARTNER.BASE, partnerRoutes);
+  app.use(APP_ROUTES.CAPTAIN.BASE, captainRoutes);
 
   // Health check
   app.get(APP_ROUTES.HEALTH, (req, res) => {

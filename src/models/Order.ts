@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { OrderStatus } from '../utils/constants';
 
 export interface IOrder extends Document {
   orderNumber: string;
@@ -10,7 +11,7 @@ export interface IOrder extends Document {
     lat: number;
     lng: number;
   };
-  status: 'created' | 'assigned' | 'picked_up' | 'delivered' | 'cancelled';
+  status: OrderStatus;
   captainId: mongoose.Types.ObjectId | null;
   partnerId: mongoose.Types.ObjectId | null;
   externalReference: string | null;
@@ -28,8 +29,8 @@ const OrderSchema: Schema = new Schema({
   },
   status: {
     type: String,
-    enum: ['created', 'assigned', 'picked_up', 'delivered', 'cancelled'],
-    default: 'created'
+    enum: Object.values(OrderStatus),
+    default: OrderStatus.CREATED
   },
   captainId: { type: Schema.Types.ObjectId, ref: 'Captain', default: null },
   partnerId: { type: Schema.Types.ObjectId, ref: 'Partner', default: null },

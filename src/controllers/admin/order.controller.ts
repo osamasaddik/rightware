@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import adminOrderService from "../../services/admin/order.service";
 import { success, error } from "../../utils/apiResponse";
+import { APP_MESSAGES } from "../../utils/app-messages";
 
 export class AdminOrderController {
   async createOrder(req: Request, res: Response) {
@@ -69,7 +70,7 @@ export class AdminOrderController {
   async deleteOrder(req: Request, res: Response) {
     try {
       await adminOrderService.deleteOrder(req.params.id as string);
-      return success(res, { message: "Order deleted successfully" });
+      return success(res, { message: APP_MESSAGES.ORDER.DELETED });
     } catch (err: any) {
       return error(res, err.message);
     }

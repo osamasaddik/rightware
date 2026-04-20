@@ -7,6 +7,7 @@ import Captain from "../models/Captain";
 import { TokenPayload } from "../types";
 import { APP_MESSAGES } from "../utils/app-messages";
 import { UserRole } from "../utils/constants";
+import config from "../config";
 
 export const protectedRoute = (roles: UserRole[] = []) => {
   // @ts-ignore
@@ -32,11 +33,7 @@ export const protectedRoute = (roles: UserRole[] = []) => {
       }
 
       if (authType === "jwt") {
-        if (!process.env.JWT_SECRET) {
-          throw new Error("JWT_SECRET is not defined in environment variables");
-        }
-
-        const decoded = jwt.verify(token!, process.env.JWT_SECRET) as TokenPayload;
+        const decoded = jwt.verify(token!, config.JWT_SECRET) as TokenPayload;
 
         if (decoded.role === UserRole.ADMIN) {
           const admin = await Admin.findById(decoded.id).select("-password");

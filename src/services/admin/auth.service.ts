@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import Admin from "../../models/Admin";
 import { UserRole } from "../../utils/constants";
 import { APP_MESSAGES } from "../../utils/app-messages";
+import config from "../../config";
 
 export class AdminAuthService {
   async login(email: string, password: string) {
@@ -13,8 +14,8 @@ export class AdminAuthService {
 
     const token = jwt.sign(
       { id: admin._id, email: admin.email, name: admin.name, role: UserRole.ADMIN },
-      process.env.JWT_SECRET!,
-      { expiresIn: (process.env.JWT_EXPIRES_IN || "8h") as any }
+      config.JWT_SECRET,
+      { expiresIn: config.JWT_EXPIRES_IN as any }
     );
 
     return {

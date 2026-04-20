@@ -1,9 +1,9 @@
 import { Router } from "express";
-import orderRoutes from "./order.routes";
+import authRoutes from "./auth.routes";
 import { APP_ROUTES } from "../app-routes";
 
 const router = Router();
 
-router.use(APP_ROUTES.PARTNER.ORDERS, orderRoutes);
+router.use(APP_ROUTES.CAPTAIN.AUTH, authRoutes);
 
 export default router;

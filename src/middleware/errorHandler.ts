@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { error } from "../utils/apiResponse";
 import { APP_MESSAGES } from "../utils/app-messages";
+import config from "../config";
 
 export const errorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
   console.error(err);
@@ -32,7 +33,7 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
   // Default Error
   const statusCode = err.statusCode || 500;
   const message =
-    process.env.NODE_ENV === "production"
+    config.NODE_ENV === "production"
       ? APP_MESSAGES.ERROR.INTERNAL_SERVER_ERROR
       : err.message || APP_MESSAGES.ERROR.INTERNAL_SERVER_ERROR;
 

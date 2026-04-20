@@ -1,12 +1,9 @@
-import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import createApp from "./app";
 import { connectDB } from "./config/db";
 import { setupLocationSocket } from "./sockets/location.socket";
-
-// Load environment variables
-dotenv.config();
+import config from "./config";
 
 const startServer = async () => {
   // Connect to Database
@@ -30,7 +27,7 @@ const startServer = async () => {
   setupLocationSocket(io);
 
   // Start Server
-  const PORT = process.env.PORT || 3000;
+  const PORT = config.PORT;
   httpServer.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
     console.log(`Socket.IO is enabled`);
