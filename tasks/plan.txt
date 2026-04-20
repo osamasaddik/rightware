@@ -45,8 +45,7 @@ STEP 4: Set up folder structure
   src/
   ├── config/
   │   ├── db.ts                    (MongoDB connection)
-  │   ├── seedAdmins.ts            (auto-seed admins at startup)   ← NEW
-  │   └── seedPartners.ts          (seed partners via script)      ← NEW
+
   ├── models/
   │   ├── Admin.ts                                                  ← NEW
   │   ├── Partner.ts                                                ← NEW
@@ -83,7 +82,7 @@ STEP 4: Set up folder structure
   ├── types/
   │   └── index.ts                 (shared TS interfaces + extend Express Request)
   └── app.ts                       (Express app factory)
-  index.ts                         (entry point: server + socket + DB + seedAdmins)
+  index.ts                         (entry point: server + socket + DB )
   scripts/
   └── seed.ts                      (seed captains, orders, partners)
 
@@ -134,7 +133,7 @@ STEP 7: Create Admin model (src/models/Admin.ts)
   Important:
     - NO CRUD routes for this model
     - NO role field needed (single flat access level)
-    - Admins are created only via seedAdmins() at startup
+    - Admins are created only via seed
 
 STEP 8: Create Partner model (src/models/Partner.ts)
   Purpose:
@@ -329,62 +328,12 @@ STEP 18: Create Partner API key middleware (src/middleware/partnerAuth.ts)
     The two auth schemes are fully separate.
 
 -----------------------------------------------------------
-PHASE 5 — ADMIN SEEDING AT STARTUP (⏱ ~20 min)
------------------------------------------------------------
-
-STEP 19: Create seedAdmins() (src/config/seedAdmins.ts)
-  Purpose:
-    Runs automatically every time the app starts (after DB connects).
-    Ensures at least one admin always exists. Safe to run repeatedly.
-
-  Logic:
-    const count = await Admin.countDocuments()
-    if (count > 0) {
-      console.log('Admins already seeded, skipping.')
-      return
-    }
-    await Admin.create({
-      email:    process.env.SEED_ADMIN_EMAIL,
-      password: process.env.SEED_ADMIN_PASSWORD,  // hashed by pre-save hook
-      name:     'System Admin'
-    })
-    console.log('Default admin created:', process.env.SEED_ADMIN_EMAIL)
-
-  Called in src/index.ts:
-    await connectDB()
-    await seedAdmins()   ← runs on every boot, skips if admin exists
-    httpServer.listen(PORT)
-
-  Rules:
-    - Runs in production too (safe because of the count check)
-    - Do NOT log the password under any circumstance
-
-STEP 20: Create seedPartners() (src/config/seedPartners.ts)
-  Purpose:
-    Run once via: npm run seed
-    Creates partner records and prints raw API keys ONCE to console.
-    Not run at app startup (keys are not re-shown after seed).
-
-  Logic for each partner:
-    const rawKey    = uuid()                    // e.g. "f47ac10b-58cc-..."
-    const prefix    = rawKey.slice(0, 8)        // "f47ac10b"
-    const hashedKey = await bcrypt.hash(rawKey, 10)
-    await Partner.create({
-      name:         partnerName,
-      apiKey:       hashedKey,
-      apiKeyPrefix: prefix,
-      isActive:     true
-    })
-    console.log(`Partner "${partnerName}" API Key: ${rawKey}`)
-    // ↑ The ONLY time this key appears. Operator must copy it now.
-
-  Partners to seed:
-    - "Acme Corp"
-    - "FastShip Ltd"
 
 -----------------------------------------------------------
 PHASE 6 — CAPTAIN CRUD (⏱ ~45 min)
 -----------------------------------------------------------
+
+donot forget to use protected midleware
 
 STEP 21: Build captain.service.ts
   Functions:
@@ -658,11 +607,10 @@ STEP 39: Build report.controller.ts + report.routes.ts
 PHASE 13 — SEED SCRIPT (⏱ ~25 min)
 -----------------------------------------------------------
 
-STEP 40: Create scripts/seed.ts
+STEP 40: Create scripts/seed.ts and scripts/admin seed
   Order of operations:
     1. connectDB()
-    2. Clear Captain, Order, Partner collections
-       (Do NOT clear Admin — managed by seedAdmins at startup)
+    2. Clear Captain, Order, Partner collections etc
     3. Call seedPartners() → creates 2 partners, logs raw API keys to console
     4. Insert 5–10 captains:
          - Mix of active/inactive status
@@ -758,7 +706,7 @@ STEP 48: Write README.md
          cp .env.example .env       ← fill in JWT_SECRET, SEED_ADMIN_*
          npm run seed               ← seeds captains, orders, partners
                                        (logs raw partner API keys — copy them)
-         npm run dev                ← server starts; seedAdmins runs on first boot
+         npm run dev                ← server starts;
     5. Getting an Admin Token
          POST /auth/login { email, password }
          Use returned token as: Authorization: Bearer <token>
@@ -799,7 +747,7 @@ STEP 50: Write TRADEOFFS.md
   - Report uses aggregation pipeline: powerful but complex; in production
     this could be offloaded to a read replica or a materialized view.
 
-STEP 51: Create Postman/Bruno collection or OpenAPI spec
+STEP 51: Create Postman collection
   Folders in collection:
     Auth           POST /auth/login                  (no auth)
     Captains       CRUD + activate/deactivate         Bearer token
@@ -813,6 +761,7 @@ STEP 51: Create Postman/Bruno collection or OpenAPI spec
     - Correct auth headers
     - Expected response shape
 
+consider using variables
 -----------------------------------------------------------
 PHASE 16 — FINAL POLISH (⏱ ~20 min)
 -----------------------------------------------------------
@@ -862,7 +811,6 @@ STEP 54: Final review checklist
   [ ] Partner routes reject admin JWTs (wrong scheme)
 
   SEEDING
-  [ ] seedAdmins() runs at startup, skips if admin already exists
   [ ] npm run seed clears + re-seeds captains, orders, partners
   [ ] Raw partner API keys logged to console during seed (only time visible)
 

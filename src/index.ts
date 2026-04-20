@@ -1,6 +1,9 @@
 import dotenv from "dotenv";
+import { createServer } from "http";
+import { Server } from "socket.io";
 import createApp from "./app";
 import { connectDB } from "./config/db";
+import { setupLocationSocket } from "./sockets/location.socket";
 
 // Load environment variables
 dotenv.config();
@@ -9,13 +12,28 @@ const startServer = async () => {
   // Connect to Database
   await connectDB();
 
-  // Create App
+  // Create Express App
   const app = createApp();
+
+  // Create HTTP Server
+  const httpServer = createServer(app);
+
+  // Set up Socket.IO
+  const io = new Server(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"],
+    },
+  });
+
+  // Initialize Socket Handlers
+  setupLocationSocket(io);
 
   // Start Server
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+    console.log(`Socket.IO is enabled`);
   });
 };
 

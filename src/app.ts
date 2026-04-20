@@ -3,7 +3,8 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import { errorHandler } from "./middleware/errorHandler";
-import authRoutes from "./routes/auth.routes";
+import adminRoutes from "./routes/admin";
+import partnerRoutes from "./routes/partner";
 import { APP_MESSAGES } from "./utils/app-messages";
 import { APP_ROUTES } from "./routes/app-routes";
 
@@ -17,7 +18,8 @@ const createApp = () => {
   app.use(express.json());
 
   // Routes
-  app.use(APP_ROUTES.AUTH.BASE, authRoutes);
+  app.use(APP_ROUTES.ADMIN.BASE, adminRoutes);
+  app.use(APP_ROUTES.PARTNER.BASE, partnerRoutes);
 
   // Health check
   app.get(APP_ROUTES.HEALTH, (req, res) => {
