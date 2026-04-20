@@ -123,7 +123,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/admin/captains?page=1&limit=20",
+                  "raw": "{{base_url}}/api/admin/captains?page=1&limit=20&sortBy=createdAt&sortOrder=desc&search&status&availability&vehicleType",
                   "host": ["{{base_url}}"],
                   "path": ["api", "admin", "captains"],
                   "query": [
@@ -134,6 +134,36 @@
                     {
                       "key": "limit",
                       "value": "20"
+                    },
+                    {
+                      "key": "sortBy",
+                      "value": "createdAt",
+                      "disabled": true
+                    },
+                    {
+                      "key": "sortOrder",
+                      "value": "desc",
+                      "disabled": true
+                    },
+                    {
+                      "key": "search",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "status",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "availability",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "vehicleType",
+                      "value": null,
+                      "disabled": true
                     }
                   ]
                 }
@@ -160,7 +190,7 @@
                 "header": [],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"John Updated\",\n  \"vehicleType\": \"car\"\n}",
+                  "raw": "{\n  \"name\": \"John Updated\",\n  \"vehicleType\": \"car\",\n  \"status\": \"active\",\n  \"availability\": \"online\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -247,7 +277,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/admin/orders?page=1&limit=20",
+                  "raw": "{{base_url}}/api/admin/orders?page=1&limit=20&sortBy=createdAt&sortOrder=desc&search&startDate&endDate&status&region&captainId&assigned",
                   "host": ["{{base_url}}"],
                   "path": ["api", "admin", "orders"],
                   "query": [
@@ -258,6 +288,51 @@
                     {
                       "key": "limit",
                       "value": "20"
+                    },
+                    {
+                      "key": "sortBy",
+                      "value": "createdAt",
+                      "disabled": true
+                    },
+                    {
+                      "key": "sortOrder",
+                      "value": "desc",
+                      "disabled": true
+                    },
+                    {
+                      "key": "search",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "startDate",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "endDate",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "status",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "region",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "captainId",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "assigned",
+                      "value": null,
+                      "disabled": true
                     }
                   ]
                 }
@@ -268,6 +343,41 @@
               "name": "Get Order by ID",
               "request": {
                 "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/orders/{{order_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "orders", "{{order_id}}"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Order",
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerName\": \"Jane Updated\",\n  \"customerPhone\": \"+1987654321\",\n  \"region\": \"Downtown\",\n  \"fullAddress\": \"456 New St, Downtown\",\n  \"location\": {\n    \"lat\": 25.276987,\n    \"lng\": 55.296249\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/orders/{{order_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "orders", "{{order_id}}"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Order",
+              "request": {
+                "method": "DELETE",
                 "header": [],
                 "url": {
                   "raw": "{{base_url}}/api/admin/orders/{{order_id}}",
@@ -323,33 +433,49 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/admin/reports/captains/order-volume-drop?previousFrom=2024-01-01&previousTo=2024-01-31&currentFrom=2024-02-01&currentTo=2024-02-29&minPreviousOrders=5&minDropPercentage=20",
+                  "raw": "{{base_url}}/api/admin/reports/captains/order-volume-drop?previousFrom=2024-01-01&previousTo=2024-01-31&currentFrom=2024-02-01&currentTo=2024-02-29&minPreviousOrders=5&minDropPercentage=20&sortBy=dropPercentage&sortOrder=desc",
                   "host": ["{{base_url}}"],
                   "path": ["api", "admin", "reports", "captains", "order-volume-drop"],
                   "query": [
                     {
                       "key": "previousFrom",
-                      "value": "2024-01-01"
+                      "value": "2024-01-01",
+                      "disabled": true
                     },
                     {
                       "key": "previousTo",
-                      "value": "2024-01-31"
+                      "value": "2024-01-31",
+                      "disabled": true
                     },
                     {
                       "key": "currentFrom",
-                      "value": "2024-02-01"
+                      "value": "2024-02-01",
+                      "disabled": true
                     },
                     {
                       "key": "currentTo",
-                      "value": "2024-02-29"
+                      "value": "2024-02-29",
+                      "disabled": true
                     },
                     {
                       "key": "minPreviousOrders",
-                      "value": "5"
+                      "value": "5",
+                      "disabled": true
                     },
                     {
                       "key": "minDropPercentage",
-                      "value": "20"
+                      "value": "20",
+                      "disabled": true
+                    },
+                    {
+                      "key": "sortBy",
+                      "value": "dropPercentage",
+                      "disabled": true
+                    },
+                    {
+                      "key": "sortOrder",
+                      "value": "desc",
+                      "disabled": true
                     }
                   ]
                 }
@@ -409,9 +535,62 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{base_url}}/api/captain/orders",
+                  "raw": "{{base_url}}/api/captain/orders?page=1&limit=20&sortBy=createdAt&sortOrder=desc&search&startDate&endDate&status",
                   "host": ["{{base_url}}"],
-                  "path": ["api", "captain", "orders"]
+                  "path": ["api", "captain", "orders"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    },
+                    {
+                      "key": "sortBy",
+                      "value": "createdAt",
+                      "disabled": true
+                    },
+                    {
+                      "key": "sortOrder",
+                      "value": "desc",
+                      "disabled": true
+                    },
+                    {
+                      "key": "search",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "startDate",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "endDate",
+                      "value": null,
+                      "disabled": true
+                    },
+                    {
+                      "key": "status",
+                      "value": null,
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get Order by ID",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/captain/orders/{{order_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "captain", "orders", "{{order_id}}"]
                 }
               },
               "response": []
@@ -456,6 +635,84 @@
       "name": "Partner",
       "item": [
         {
+          "name": "Get Orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{partner_api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/partner/v1/orders?page=1&limit=20&sortBy=createdAt&sortOrder=desc&search&startDate&endDate&status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "partner", "v1", "orders"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "createdAt",
+                  "disabled": true
+                },
+                {
+                  "key": "sortOrder",
+                  "value": "desc",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": null,
+                  "disabled": true
+                },
+                {
+                  "key": "startDate",
+                  "value": null,
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": null,
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": null,
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Order by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{partner_api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/partner/v1/orders/{{order_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "partner", "v1", "orders", "{{order_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Create Order",
           "request": {
             "method": "POST",
@@ -468,7 +725,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"customerName\": \"Partner Customer\",\n  \"customerPhone\": \"+1122334455\",\n  \"region\": \"Business Bay\",\n  \"fullAddress\": \"Tower 1, Business Bay\",\n  \"location\": {\n    \"lat\": 25.1852,\n    \"lng\": 55.2727\n  }\n}",
+              "raw": "{\n  \"customerName\": \"Partner Customer\",\n  \"customerPhone\": \"+1122334455\",\n  \"region\": \"Business Bay\",\n  \"fullAddress\": \"Tower 1, Business Bay\",\n  \"location\": {\n    \"lat\": 25.1852,\n    \"lng\": 55.2727\n  },\n  \"externalReference\": \"EXT-ORD-999\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -495,7 +752,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"customerName\": \"Partner Customer\",\n  \"customerPhone\": \"+1122334455\",\n  \"region\": \"Business Bay\",\n  \"fullAddress\": \"Tower 1, Business Bay\",\n  \"location\": {\n    \"lat\": 25.1852,\n    \"lng\": 55.2727\n  }\n}",
+                  "raw": "{\n  \"customerName\": \"Partner Customer\",\n  \"customerPhone\": \"+1122334455\",\n  \"region\": \"Business Bay\",\n  \"fullAddress\": \"Tower 1, Business Bay\",\n  \"location\": {\n    \"lat\": 25.1852,\n    \"lng\": 55.2727\n  },\n  \"externalReference\": \"EXT-ORD-999\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"

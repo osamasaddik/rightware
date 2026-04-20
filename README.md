@@ -75,6 +75,10 @@ The Docker setup includes:
 
 All endpoints include comprehensive validation for request body, query parameters, and path parameters.
 
+### Postman Collection
+
+A Postman collection is provided in the root directory as `postman_collection.json`. You can import this into Postman to easily test all API endpoints, including Admin, Captain, and Partner routes.
+
 ### Admin Routes
 
 #### Authentication
