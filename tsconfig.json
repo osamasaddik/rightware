@@ -5,12 +5,16 @@
     "outDir": "./dist",
 
     // Runtime environment (Node.js)
-    "target": "ES2020",
-    "module": "CommonJS",
-    // "moduleResolution": "node",
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // "target": "ES2020",
+    // "module": "CommonJS",
+    // "moduleResolution": "node10",
+    // "ignoreDeprecations": "6.0",
 
     // Node types
-    "types": ["node"],
+    "types": ["node", "jest"],
     "lib": ["ES2020"],
 
     // Interop

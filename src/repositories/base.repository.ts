@@ -25,7 +25,7 @@ export abstract class BaseRepository<T extends Document> {
     return await this.model.find(filter, null, options).sort(sort).skip(skip).limit(limit);
   }
 
-  async update(id: string, data: any, options: QueryOptions = { new: true }): Promise<T | null> {
+  async update(id: string, data: any, options: QueryOptions = { returnDocument: "after" }): Promise<T | null> {
     return await this.model.findByIdAndUpdate(id, data, options);
   }
 

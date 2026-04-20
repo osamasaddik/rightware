@@ -5,10 +5,12 @@ export const APP_ROUTES = {
     CAPTAINS: "/captains",
     ORDERS: "/orders",
     ASSIGNMENT: "/orders/:id", // For /orders/:id/assign and /orders/:id/unassign
+    REPORTS: "/reports",
   },
   CAPTAIN: {
     BASE: "/api/captain",
     AUTH: "/auth",
+    ORDERS: "/orders",
   },
   PARTNER: {
     BASE: "/api/partner/v1",

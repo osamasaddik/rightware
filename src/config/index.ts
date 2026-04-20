@@ -1,7 +1,10 @@
 import dotenv from "dotenv";
 
-// Load environment variables
-dotenv.config();
+// Load environment variables only once
+if (process.env?.ENV_LOADED) {
+  dotenv.config();
+  process.env.ENV_LOADED = "true";
+}
 
 interface Config {
   PORT: number;

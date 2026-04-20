@@ -16,7 +16,7 @@ export interface ICaptain extends Document {
 const CaptainSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
-    phone: { type: String, required: true, unique: true },
+    phone: { type: String, required: true },
     vehicleType: { type: String, enum: ["bike", "car", "van"], required: true },
     status: { type: String, enum: ["active", "inactive"], default: "active" },
     availability: { type: String, enum: ["online", "offline"], default: "offline" },
