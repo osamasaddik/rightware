@@ -20,12 +20,16 @@ STEP 2: Install core dependencies
   - Production:
       npm install express mongoose socket.io dotenv
                   express-validator cors helmet morgan
-                  express-rate-limit uuid
+                  express-rate-limit uuid bcryptjs jsonwebtoken
   - Dev:
       npm install -D typescript ts-node nodemon
                   @types/express @types/node @types/cors
-                  @types/morgan @types/uuid
+                  @types/morgan @types/uuid @types/bcryptjs
+                  @types/jsonwebtoken
                   jest ts-jest @types/jest supertest @types/supertest
+
+  NOTE: bcryptjs     → for hashing admin passwords + partner API keys
+        jsonwebtoken → for issuing/verifying JWT tokens on admin login
 
 STEP 3: Configure TypeScript
   - Run: npx tsc --init
@@ -40,17 +44,23 @@ STEP 3: Configure TypeScript
 STEP 4: Set up folder structure
   src/
   ├── config/
-  │   └── db.ts                  (MongoDB connection)
+  │   ├── db.ts                    (MongoDB connection)
+  │   ├── seedAdmins.ts            (auto-seed admins at startup)   ← NEW
+  │   └── seedPartners.ts          (seed partners via script)      ← NEW
   ├── models/
+  │   ├── Admin.ts                                                  ← NEW
+  │   ├── Partner.ts                                                ← NEW
   │   ├── Captain.ts
   │   └── Order.ts
   ├── routes/
+  │   ├── auth.routes.ts           (admin login — public)          ← NEW
   │   ├── captain.routes.ts
   │   ├── order.routes.ts
   │   ├── assignment.routes.ts
   │   ├── partner.routes.ts
   │   └── report.routes.ts
   ├── controllers/
+  │   ├── auth.controller.ts                                        ← NEW
   │   ├── captain.controller.ts
   │   ├── order.controller.ts
   │   ├── assignment.controller.ts
@@ -64,20 +74,27 @@ STEP 4: Set up folder structure
   ├── sockets/
   │   └── location.socket.ts
   ├── middleware/
-  │   ├── validate.ts            (express-validator error handler)
-  │   ├── partnerAuth.ts         (API key middleware)
-  │   └── errorHandler.ts        (global error handler)
+  │   ├── validate.ts              (express-validator error handler)
+  │   ├── adminAuth.ts             (JWT guard for admin routes)     ← NEW
+  │   ├── partnerAuth.ts           (API key guard for partner routes)
+  │   └── errorHandler.ts          (global error handler)
   ├── utils/
-  │   └── apiResponse.ts         (standard response shape)
+  │   └── apiResponse.ts           (standard response shape)
   ├── types/
-  │   └── index.ts               (shared TS types/interfaces)
-  └── app.ts                     (Express app factory)
-  index.ts                       (entry point, starts server + socket)
+  │   └── index.ts                 (shared TS interfaces + extend Express Request)
+  └── app.ts                       (Express app factory)
+  index.ts                         (entry point: server + socket + DB + seedAdmins)
+  scripts/
+  └── seed.ts                      (seed captains, orders, partners)
 
 STEP 5: Create .env and .env.example
   PORT=3000
   MONGODB_URI=mongodb://localhost:27017/delivery-backend
-  PARTNER_API_KEY=supersecretkey123
+  JWT_SECRET=your_jwt_secret_here
+  JWT_EXPIRES_IN=8h
+  # Admin seed credentials (used only by seedAdmins at startup)
+  SEED_ADMIN_EMAIL=admin@delivery.com
+  SEED_ADMIN_PASSWORD=Admin@1234
 
 STEP 6: Set up scripts in package.json
   "dev":   "nodemon --exec ts-node src/index.ts"
@@ -87,10 +104,75 @@ STEP 6: Set up scripts in package.json
   "seed":  "ts-node scripts/seed.ts"
 
 -----------------------------------------------------------
-PHASE 2 — DATABASE MODELS (⏱ ~30 min)
+PHASE 2 — DATABASE MODELS (⏱ ~45 min)
 -----------------------------------------------------------
 
-STEP 7: Create Captain model (src/models/Captain.ts)
+STEP 7: Create Admin model (src/models/Admin.ts)
+  Purpose:
+    Admins are seeded once at app startup. There is no admin CRUD API
+    and no role system — all admins have identical full access.
+
+  Fields:
+    - email:       String, required, unique, lowercase, trim
+    - password:    String, required  (stored as bcrypt hash, NEVER plaintext)
+    - name:        String, required
+    - timestamps:  true
+
+  Index:
+    - email (unique)
+
+  Pre-save hook:
+    - if (this.isModified('password'))
+        this.password = await bcrypt.hash(this.password, 10)
+    - Ensures password is always stored hashed, even if set directly
+
+  Instance method:
+    - comparePassword(plain: string): Promise<boolean>
+        return bcrypt.compare(plain, this.password)
+    - Used during login to verify credentials without ever decrypting
+
+  Important:
+    - NO CRUD routes for this model
+    - NO role field needed (single flat access level)
+    - Admins are created only via seedAdmins() at startup
+
+STEP 8: Create Partner model (src/models/Partner.ts)
+  Purpose:
+    Partners are external clients that call the partner API.
+    Each partner has a unique API key stored hashed in the DB.
+    Created via seed script only — no CRUD API.
+
+  Fields:
+    - name:            String, required  (e.g., "Acme Corp")
+    - apiKey:          String, required  (bcrypt hash of the raw key)
+    - apiKeyPrefix:    String, required  (first 8 chars of raw key, plaintext)
+                       Used to narrow DB lookup before bcrypt comparison
+    - isActive:        Boolean, default: true
+    - timestamps:      true
+
+  Indexes:
+    - apiKeyPrefix (for fast prefix-based lookup)
+    - apiKey is NOT indexed (unhashable for direct query)
+
+  Static method:
+    - findByRawApiKey(rawKey: string): Promise<Partner | null>
+        const prefix = rawKey.slice(0, 8)
+        const candidates = await Partner.find({ apiKeyPrefix: prefix, isActive: true })
+        for (const partner of candidates) {
+          if (await bcrypt.compare(rawKey, partner.apiKey)) return partner
+        }
+        return null
+    - Why prefix? bcrypt hashes cannot be queried directly.
+      Storing a short plaintext prefix narrows the DB query to ~1 candidate
+      before running the slow bcrypt.compare.
+
+  Important:
+    - Raw API key is shown ONCE during seeding (log it to console)
+    - Only the bcrypt hash is stored in the database
+    - NO CRUD routes for this model
+    - Partners are created only via the seed script
+
+STEP 9: Create Captain model (src/models/Captain.ts)
   Fields:
     - name:            String, required
     - phone:           String, required, unique
@@ -101,14 +183,14 @@ STEP 7: Create Captain model (src/models/Captain.ts)
         lat:           Number (optional)
         lng:           Number (optional)
         updatedAt:     Date (optional)
-    - timestamps:      true (createdAt, updatedAt auto)
+    - timestamps:      true
 
   Index:
     - phone (unique)
 
-STEP 8: Create Order model (src/models/Order.ts)
+STEP 10: Create Order model (src/models/Order.ts)
   Fields:
-    - orderNumber:       String, required, unique (auto-generated)
+    - orderNumber:       String, required, unique (auto-generated at create)
     - customerName:      String, required
     - customerPhone:     String, required
     - region:            String, required
@@ -119,494 +201,772 @@ STEP 8: Create Order model (src/models/Order.ts)
     - status:            String, enum: ['created','assigned','picked_up',
                          'delivered','cancelled'], default: 'created'
     - captainId:         ObjectId ref 'Captain', nullable
-    - externalReference: String, nullable (for partner API)
+    - partnerId:         ObjectId ref 'Partner', nullable        ← NEW
+                         (set when order is created via partner API)
+    - externalReference: String, nullable (partner's own reference ID)
     - timestamps:        true
 
   Indexes:
     - orderNumber (unique)
-    - status, region, captainId (for filtering performance)
+    - status, region, captainId (for filter performance)
     - Text index on: orderNumber, customerName, customerPhone
+    - Sparse compound unique: { partnerId, externalReference }
+      (prevents duplicate partner orders at the DB level)
 
-STEP 9: Create MongoDB connection (src/config/db.ts)
-  - Use mongoose.connect(process.env.MONGODB_URI)
-  - Log success/failure
-  - Export connectDB function
+STEP 11: Create MongoDB connection (src/config/db.ts)
+  - mongoose.connect(process.env.MONGODB_URI)
+  - Log "MongoDB connected" on success
+  - Log error and process.exit(1) on failure
+  - Export: connectDB()
 
 -----------------------------------------------------------
 PHASE 3 — UTILITY LAYER (⏱ ~20 min)
 -----------------------------------------------------------
 
-STEP 10: Create standard API response helper (src/utils/apiResponse.ts)
-  - success(res, data, statusCode=200, meta?)
-  - error(res, message, statusCode=400, details?)
-  - All responses follow shape:
+STEP 12: Create standard API response helper (src/utils/apiResponse.ts)
+  Functions:
+    - success(res, data, statusCode=200, meta?)
+    - error(res, message, statusCode=400, details?)
+  All responses follow this shape:
     {
-      success: true/false,
-      data: ...,
-      meta: { page, limit, total },  // for list endpoints
-      message: "...",
-      errors: [...]                  // for validation failures
+      success: true | false,
+      data: any,
+      meta: { page, limit, total, totalPages },  // list endpoints only
+      message: string,
+      errors: [ { field, message } ]             // validation failures only
     }
 
-STEP 11: Create global error handler (src/middleware/errorHandler.ts)
-  - Catch Mongoose validation errors → 400
-  - Catch duplicate key errors (code 11000) → 409
-  - Catch unknown errors → 500
-  - Never leak stack traces in production
+STEP 13: Create global error handler (src/middleware/errorHandler.ts)
+  Handles:
+    - Mongoose ValidationError  → 400
+    - Mongoose duplicate key (code 11000) → 409
+    - JsonWebTokenError          → 401 "Invalid token"
+    - TokenExpiredError          → 401 "Token expired"
+    - Everything else            → 500 "Internal server error"
+  Never leak stack traces when NODE_ENV === 'production'
 
-STEP 12: Create validation middleware (src/middleware/validate.ts)
-  - Uses express-validator's validationResult
-  - If errors exist, return 400 with array of field errors
-  - Export as: validate = (req, res, next) => { ... }
+STEP 14: Create validation middleware (src/middleware/validate.ts)
+  - Uses express-validator's validationResult(req)
+  - If errors exist → return 400 with array of { field, message }
+  - Export: validate = (req, res, next) => { ... }
 
-STEP 13: Create partner API key middleware (src/middleware/partnerAuth.ts)
-  - Read x-api-key header
-  - Compare with process.env.PARTNER_API_KEY
-  - Return 401 if missing or invalid
+STEP 15: Extend Express Request type (src/types/index.ts)
+  declare module 'express-serve-static-core' {
+    interface Request {
+      admin?:   { id: string; email: string; name: string }
+      partner?: { id: string; name: string }
+    }
+  }
+  This lets adminAuth set req.admin and partnerAuth set req.partner
+  without TypeScript errors in controllers.
 
 -----------------------------------------------------------
-PHASE 4 — CAPTAIN CRUD (⏱ ~45 min)
+PHASE 4 — AUTH MIDDLEWARE (⏱ ~30 min)
 -----------------------------------------------------------
 
-STEP 14: Build captain.service.ts
+STEP 16: Create Admin JWT middleware (src/middleware/adminAuth.ts)
+  Purpose:
+    Protects all internal admin routes (captains, orders, assignment, reports).
+    Any request without a valid JWT is rejected before reaching controllers.
+
+  Logic:
+    1. Read header: Authorization
+    2. If missing or not "Bearer <token>" format → 401 "Missing or malformed token"
+    3. Extract token = header.split(' ')[1]
+    4. jwt.verify(token, process.env.JWT_SECRET)
+    5. If TokenExpiredError  → 401 "Token expired"
+    6. If JsonWebTokenError  → 401 "Invalid token"
+    7. Attach decoded payload: req.admin = { id, email, name }
+    8. next()
+
+  Applied at the top of each protected router:
+    router.use(adminAuth)
+    → All routes in that file automatically require a valid JWT
+
+STEP 17: Create Admin Login endpoint
+  File: src/routes/auth.routes.ts + src/controllers/auth.controller.ts
+  This is the ONLY public endpoint — no JWT required to call it.
+
+  POST /auth/login
+    Body: { email: string, password: string }
+    Logic:
+      1. Find admin: Admin.findOne({ email: body.email.toLowerCase() })
+      2. If not found → 401 "Invalid credentials"
+         (do NOT say "email not found" — prevents user enumeration)
+      3. await admin.comparePassword(body.password)
+      4. If false → 401 "Invalid credentials"
+      5. Sign token:
+           jwt.sign(
+             { id: admin._id, email: admin.email, name: admin.name },
+             process.env.JWT_SECRET,
+             { expiresIn: process.env.JWT_EXPIRES_IN }
+           )
+      6. Return 200: { token, admin: { id, email, name } }
+
+  Validation rules applied to this route:
+    - email: isEmail(), normalizeEmail()
+    - password: notEmpty()
+
+STEP 18: Create Partner API key middleware (src/middleware/partnerAuth.ts)
+  Purpose:
+    Protects all /partner/v1/* routes. Only requests with a valid
+    hashed API key matching an active partner in the DB are allowed.
+
+  Logic:
+    1. Read header: x-api-key
+    2. If missing → 401 "API key required"
+    3. const partner = await Partner.findByRawApiKey(rawKey)
+    4. If null → 401 "Invalid API key"
+    5. Attach: req.partner = { id: partner._id, name: partner.name }
+    6. next()
+
+  Applied at the top of the partner router:
+    router.use(partnerAuth)
+
+  Security note:
+    Partner routes do NOT accept admin JWT.
+    Admin routes do NOT accept partner API key.
+    The two auth schemes are fully separate.
+
+-----------------------------------------------------------
+PHASE 5 — ADMIN SEEDING AT STARTUP (⏱ ~20 min)
+-----------------------------------------------------------
+
+STEP 19: Create seedAdmins() (src/config/seedAdmins.ts)
+  Purpose:
+    Runs automatically every time the app starts (after DB connects).
+    Ensures at least one admin always exists. Safe to run repeatedly.
+
+  Logic:
+    const count = await Admin.countDocuments()
+    if (count > 0) {
+      console.log('Admins already seeded, skipping.')
+      return
+    }
+    await Admin.create({
+      email:    process.env.SEED_ADMIN_EMAIL,
+      password: process.env.SEED_ADMIN_PASSWORD,  // hashed by pre-save hook
+      name:     'System Admin'
+    })
+    console.log('Default admin created:', process.env.SEED_ADMIN_EMAIL)
+
+  Called in src/index.ts:
+    await connectDB()
+    await seedAdmins()   ← runs on every boot, skips if admin exists
+    httpServer.listen(PORT)
+
+  Rules:
+    - Runs in production too (safe because of the count check)
+    - Do NOT log the password under any circumstance
+
+STEP 20: Create seedPartners() (src/config/seedPartners.ts)
+  Purpose:
+    Run once via: npm run seed
+    Creates partner records and prints raw API keys ONCE to console.
+    Not run at app startup (keys are not re-shown after seed).
+
+  Logic for each partner:
+    const rawKey    = uuid()                    // e.g. "f47ac10b-58cc-..."
+    const prefix    = rawKey.slice(0, 8)        // "f47ac10b"
+    const hashedKey = await bcrypt.hash(rawKey, 10)
+    await Partner.create({
+      name:         partnerName,
+      apiKey:       hashedKey,
+      apiKeyPrefix: prefix,
+      isActive:     true
+    })
+    console.log(`Partner "${partnerName}" API Key: ${rawKey}`)
+    // ↑ The ONLY time this key appears. Operator must copy it now.
+
+  Partners to seed:
+    - "Acme Corp"
+    - "FastShip Ltd"
+
+-----------------------------------------------------------
+PHASE 6 — CAPTAIN CRUD (⏱ ~45 min)
+-----------------------------------------------------------
+
+STEP 21: Build captain.service.ts
   Functions:
     - createCaptain(data)
-    - getCaptains(query)           // for list with filters
+    - getCaptains(query)
     - getCaptainById(id)
     - updateCaptain(id, data)
-    - deleteCaptain(id)            // soft or hard delete
+    - deleteCaptain(id)
     - activateCaptain(id)
     - deactivateCaptain(id)
 
-  Business Rules (enforce in service layer):
-    - Phone must match regex: /^\+?[0-9]{7,15}$/
-    - Cannot activate a captain that is already active
-    - Cannot deactivate a captain that is already inactive
-    - Deactivating a captain sets availability to 'offline' automatically
+  Business Rules:
+    - Phone must match: /^\+?[0-9]{7,15}$/
+    - Cannot activate an already-active captain
+    - Cannot deactivate an already-inactive captain
+    - Deactivating a captain auto-sets availability → 'offline'
 
-STEP 15: Build captain.controller.ts
-  - POST   /captains              → createCaptain
-  - GET    /captains              → listCaptains (with optional filters)
-  - GET    /captains/:id          → getCaptainById
-  - PUT    /captains/:id          → updateCaptain
-  - DELETE /captains/:id          → deleteCaptain
-  - PATCH  /captains/:id/activate   → activateCaptain
-  - PATCH  /captains/:id/deactivate → deactivateCaptain
+STEP 22: Build captain.controller.ts + captain.routes.ts
+  Protected — apply at router level:
+    router.use(adminAuth)   ← ALL captain routes require valid JWT
 
-STEP 16: Add input validation rules for captain routes
-  - name: notEmpty
-  - phone: matches phone regex
+  Routes:
+    POST   /captains                  → createCaptain
+    GET    /captains                  → listCaptains
+    GET    /captains/:id              → getCaptainById
+    PUT    /captains/:id              → updateCaptain
+    DELETE /captains/:id              → deleteCaptain
+    PATCH  /captains/:id/activate     → activateCaptain
+    PATCH  /captains/:id/deactivate   → deactivateCaptain
+
+STEP 23: Add input validation rules for captain routes
+  - name: notEmpty()
+  - phone: matches(/^\+?[0-9]{7,15}$/)
   - vehicleType: isIn(['bike','car','van'])
-  - lat/lng (if provided): isFloat({ min: -90, max: 90 }) / isFloat({ min: -180, max: 180 })
+  - lat (if provided): isFloat({ min: -90, max: 90 })
+  - lng (if provided): isFloat({ min: -180, max: 180 })
 
 -----------------------------------------------------------
-PHASE 5 — ORDER CRUD (⏱ ~45 min)
+PHASE 7 — ORDER CRUD (⏱ ~45 min)
 -----------------------------------------------------------
 
-STEP 17: Build order.service.ts
+STEP 24: Build order.service.ts
   Functions:
-    - createOrder(data)
-    - getOrders(filters, sort, pagination)  // advanced list
+    - createOrder(data, partnerId?: string)
+    - getOrders(filters, sort, pagination)
     - getOrderById(id)
     - updateOrder(id, data)
     - deleteOrder(id)
 
   Business Rules:
-    - orderNumber auto-generated on create (e.g., "ORD-" + Date.now())
-    - Cannot reassign a delivered/cancelled order
-      (document in ASSUMPTIONS.md: "We block re-assignment of
-       delivered/cancelled orders to protect data integrity.
-       A new order must be created instead.")
-    - location.lat must be in [-90, 90]
-    - location.lng must be in [-180, 180]
+    - orderNumber auto-generated: "ORD-" + Date.now()
+    - Cannot reassign delivered/cancelled orders
+    - location.lat ∈ [-90, 90], location.lng ∈ [-180, 180]
+    - If partnerId provided, store it on the order for traceability
 
-STEP 18: Build order.controller.ts
-  - POST   /orders       → createOrder
-  - GET    /orders        → listOrders (advanced, see Phase 7)
-  - GET    /orders/:id    → getOrderById (must include full location/address)
-  - PUT    /orders/:id    → updateOrder
-  - DELETE /orders/:id    → deleteOrder
+STEP 25: Build order.controller.ts + order.routes.ts
+  Protected — apply at router level:
+    router.use(adminAuth)   ← ALL order routes require valid JWT
 
-STEP 19: Add input validation rules for order routes
-  - customerName: notEmpty
-  - customerPhone: matches phone regex
-  - region: notEmpty
-  - fullAddress: notEmpty
+  Routes:
+    POST   /orders         → createOrder
+    GET    /orders         → listOrders (advanced, see Phase 9)
+    GET    /orders/:id     → getOrderById (full location + address)
+    PUT    /orders/:id     → updateOrder
+    DELETE /orders/:id     → deleteOrder
+
+STEP 26: Add input validation rules for order routes
+  - customerName: notEmpty()
+  - customerPhone: matches(/^\+?[0-9]{7,15}$/)
+  - region: notEmpty()
+  - fullAddress: notEmpty()
   - location.lat: isFloat({ min: -90, max: 90 })
   - location.lng: isFloat({ min: -180, max: 180 })
 
 -----------------------------------------------------------
-PHASE 6 — ASSIGNMENT (⏱ ~30 min)
+PHASE 8 — ASSIGNMENT (⏱ ~30 min)
 -----------------------------------------------------------
 
-STEP 20: Build assignment.service.ts
+STEP 27: Build assignment.service.ts
   Functions:
     - assignCaptain(orderId, captainId)
     - unassignCaptain(orderId)
 
   Business Rules:
-    - Captain must exist and be ACTIVE to be assigned
-    - Captain must be ONLINE (availability = 'online') to be assigned
-      (document assumption if you want to relax this)
-    - Order must be in 'created' or 'assigned' status to be re-assigned
-    - Assigning a captain sets order status to 'assigned'
-    - Unassigning sets captainId to null and order status back to 'created'
+    - Captain must be ACTIVE (status = 'active')
+    - Captain must be ONLINE (availability = 'online')
+    - Order must be in status 'created' or 'assigned'
+    - assignCaptain  → sets order.captainId, order.status = 'assigned'
+    - unassignCaptain → sets order.captainId = null, order.status = 'created'
 
-STEP 21: Build assignment.controller.ts
-  - POST   /orders/:id/assign      → body: { captainId }
-  - DELETE /orders/:id/unassign    → unassign captain
+STEP 28: Build assignment.controller.ts + assignment.routes.ts
+  Protected — apply at router level:
+    router.use(adminAuth)
+
+  Routes:
+    POST   /orders/:id/assign      body: { captainId }
+    DELETE /orders/:id/unassign
 
 -----------------------------------------------------------
-PHASE 7 — ADVANCED ORDER LIST (⏱ ~45 min)
+PHASE 9 — ADVANCED ORDER LIST (⏱ ~45 min)
 -----------------------------------------------------------
 
-STEP 22: Implement filtering in order.service.ts → getOrders()
-  Filters to support (all optional, combinable):
-    - status        → { status: req.query.status }
-    - region        → { region: req.query.region }
-    - captainId     → { captainId: req.query.captainId }
-    - dateFrom/dateTo → { createdAt: { $gte, $lte } }
-    - assigned      → if 'true': { captainId: { $ne: null } }
-                       if 'false': { captainId: null }
+STEP 29: Implement filtering in order.service.ts → getOrders()
+  Supported filters (all optional, combinable):
+    - status      → match exact enum value
+    - region      → match exact string
+    - captainId   → match ObjectId
+    - partnerId   → match ObjectId  ← NEW (filter orders by originating partner)
+    - dateFrom / dateTo → createdAt: { $gte, $lte }
+    - assigned    → 'true':  { captainId: { $ne: null } }
+                    'false': { captainId: null }
 
-STEP 23: Implement text search in getOrders()
-  - Add MongoDB text index on: orderNumber, customerName, customerPhone
-  - If query.search is present: add $text: { $search: query.search } to filter
-  - For partial/prefix search fallback, use $or with $regex
+STEP 30: Implement text search in getOrders()
+  - MongoDB $text index on: orderNumber, customerName, customerPhone
+  - If query.search → { $text: { $search: query.search } }
+  - Fallback for partial/prefix search: $or with $regex on same three fields
 
-STEP 24: Implement sorting in getOrders()
-  Allowed sort fields: createdAt, updatedAt, status
-  - Default: createdAt DESC
+STEP 31: Implement sorting in getOrders()
+  - Allowed sort fields: createdAt, updatedAt, status
+  - Default: { createdAt: -1 }
   - Build sort object dynamically from query.sortBy + query.sortOrder
   - Reject unknown sort fields → 400
 
-STEP 25: Implement pagination in getOrders()
-  - Accept: page (default 1), limit (default 20, max 100)
-  - Use .skip((page-1)*limit).limit(limit)
-  - Run countDocuments() with same filter for total
-  - Return meta: { page, limit, total, totalPages }
+STEP 32: Implement pagination in getOrders()
+  - page: default 1, limit: default 20, max 100
+  - .skip((page-1) * limit).limit(limit)
+  - countDocuments() with same filter for total count
+  - Return: meta { page, limit, total, totalPages }
 
 -----------------------------------------------------------
-PHASE 8 — REAL-TIME LOCATION (⏱ ~45 min)
+PHASE 10 — REAL-TIME LOCATION (⏱ ~45 min)
 -----------------------------------------------------------
 
-STEP 26: Set up Socket.IO server (src/index.ts)
-  - Attach Socket.IO to HTTP server
-  - Pass io instance to location socket handler
-  - Export io for use in controllers if needed
+STEP 33: Set up Socket.IO server (src/index.ts)
+  - const httpServer = createServer(app)
+  - const io = new Server(httpServer, { cors: { origin: '*' } })
+  - Pass io to location socket handler
+  - httpServer.listen(PORT)
 
-STEP 27: Implement location socket handler (src/sockets/location.socket.ts)
-  Event design:
-    CLIENT → SERVER:
-      "captain:authenticate"
-        Payload: { captainId: string }
-        Server: verify captainId exists and is active
-                join room: "captain:<captainId>"
-                emit back: "authenticated" or "auth_error"
+STEP 34: Implement location socket handler (src/sockets/location.socket.ts)
 
-      "captain:location_update"
-        Payload: { captainId: string, lat: number, lng: number }
-        Server:
-          1. Validate lat/lng ranges
-          2. Check captain is active (re-verify)
-          3. Update captain.currentLocation in DB
-          4. Emit "location:updated" to room "admins"
-             and to room "order:<orderId>" if captain has active order
-        Broadcast payload:
-          { captainId, lat, lng, updatedAt }
+  AUTH STRATEGY:
+    Captains  → identify by captainId (verified against DB)
+    Admins    → authenticate via JWT passed in socket handshake:
+                  socket.handshake.auth.token  (preferred)
+                  socket.handshake.query.token (fallback)
+                Both use the same JWT_SECRET as the HTTP adminAuth middleware.
 
-    SERVER → CLIENT:
-      "authenticated"      → { success: true, captainId }
-      "auth_error"         → { message: "..." }
-      "location:updated"   → { captainId, lat, lng, updatedAt }
-      "validation_error"   → { message: "Invalid lat/lng" }
+  CAPTAIN EVENTS:
+    Client → "captain:authenticate"
+      Payload: { captainId: string }
+      Server:
+        1. Captain.findById(captainId)
+        2. If not found or status !== 'active' → emit "auth_error", return
+        3. socket.join("captain:<captainId>")
+        4. emit "authenticated" { success: true, captainId }
 
-  Admin listeners:
-    - Admins join via: "admin:join" event
-    - Server puts them in "admins" room
-    - They receive all "location:updated" broadcasts
+    Client → "captain:location_update"
+      Payload: { captainId: string, lat: number, lng: number }
+      Server:
+        1. Validate lat ∈ [-90,90], lng ∈ [-180,180] → emit "validation_error" if bad
+        2. Re-fetch captain from DB, check still active
+        3. Captain.findByIdAndUpdate(captainId, { currentLocation: { lat, lng, updatedAt: now } })
+        4. Emit "location:updated" to room "admins"
+        5. If captain has active order → also emit to room "order:<orderId>"
 
-  Document in README:
-    - All event names
-    - All payload formats
-    - Authentication approach (captainId-based, with DB check)
-    - How listeners (admins) subscribe
+  ADMIN EVENTS:
+    Client → "admin:join"
+      Payload: {}
+      Server:
+        1. token = socket.handshake.auth.token
+        2. jwt.verify(token, JWT_SECRET)
+        3. If invalid/expired → emit "auth_error" { message }, socket.disconnect()
+        4. socket.join("admins")
+        5. emit "admin:joined" { success: true }
 
-STEP 28: Enforce inactive captain restriction in socket handler
-  - Before processing "captain:location_update":
-    - Re-fetch captain from DB
-    - If status === 'inactive', emit "auth_error" and disconnect
+  SERVER → CLIENT EVENTS (all sockets):
+    "authenticated"    { success: true, captainId }
+    "auth_error"       { message: string }
+    "admin:joined"     { success: true }
+    "location:updated" { captainId, lat, lng, updatedAt }
+    "validation_error" { message: string }
+
+STEP 35: Enforce inactive captain check in socket handler
+  - On every "captain:location_update": re-fetch from DB (not memory)
+  - If status === 'inactive' → emit "auth_error", socket.disconnect()
 
 -----------------------------------------------------------
-PHASE 9 — PARTNER API (⏱ ~30 min)
+PHASE 11 — PARTNER API (⏱ ~30 min)
 -----------------------------------------------------------
 
-STEP 29: Design partner API (src/routes/partner.routes.ts)
+STEP 36: Build partner.routes.ts + partner.controller.ts
   Base path: /partner/v1
-  Auth: x-api-key header (partnerAuth middleware on all routes)
+  Protected — apply at router level:
+    router.use(partnerAuth)   ← ALL partner routes require valid x-api-key
 
   Endpoint:
     POST /partner/v1/orders
-      - Creates a new order on behalf of a partner
-      - Accepts same fields as internal order create
-      - Additionally accepts: externalReference (string, optional)
-      - Idempotency: if externalReference already exists → return existing
-        order with 200 instead of creating duplicate
-        (document this in ASSUMPTIONS.md)
-      - Rate limiting: 100 requests per 15 minutes per API key IP
+      - req.partner is populated by partnerAuth middleware
+      - Sets order.partnerId = req.partner.id
+      - Accepts optional externalReference
 
-STEP 30: Apply rate limiting to partner API
-  - Use express-rate-limit
-  - windowMs: 15 * 60 * 1000 (15 min)
-  - max: 100
-  - Apply only to /partner/* routes
+      Idempotency logic:
+        if (body.externalReference) {
+          const existing = await Order.findOne({
+            partnerId: req.partner.id,
+            externalReference: body.externalReference
+          })
+          if (existing) return success(res, existing, 200)  // not 201
+        }
+        const newOrder = await createOrder(body, req.partner.id)
+        return success(res, newOrder, 201)
 
------------------------------------------------------------
-PHASE 10 — REPORT API (⏱ ~45 min)
------------------------------------------------------------
-
-STEP 31: Implement report.service.ts → getOrderVolumeDrop()
-  Logic:
-    1. Accept: previousFrom, previousTo, currentFrom, currentTo,
-               minPreviousOrders, minDropPercentage, page, limit,
-               sortBy, sortOrder
-
-    2. Validate all date params are valid ISO dates
-       Validate sortBy is one of: dropPercentage, dropCount,
-       previousOrders, currentOrders
-
-    3. Use MongoDB aggregation pipeline:
-       Stage 1: $facet or two separate $group stages:
-         - Group orders by captainId where captainId != null
-           and createdAt is within previousFrom–previousTo
-           → previousCount per captain
-         - Group orders by captainId where captainId != null
-           and createdAt is within currentFrom–currentTo
-           → currentCount per captain
-
-       Stage 2: $lookup captains to get captainName
-
-       Stage 3: $project:
-         - captainId
-         - captainName
-         - previousOrders
-         - currentOrders
-         - dropCount = previousOrders - currentOrders
-         - dropPercentage = ((previousOrders - currentOrders)
-                             / previousOrders) * 100
-
-       Stage 4: $match:
-         - previousOrders >= minPreviousOrders
-         - dropPercentage >= minDropPercentage
-         - dropCount > 0 (only actual drops)
-
-       Stage 5: $sort by chosen sortBy/sortOrder
-       Stage 6: $skip + $limit for pagination
-       Stage 7: $count for total (use $facet to get both in one query)
-
-    4. Return paginated list with meta
-
-STEP 32: Build report.controller.ts
-  - GET /reports/captains/order-volume-drop
-  - Parse and validate all query params
-  - Call report.service.ts
-  - Return standard paginated response
+STEP 37: Apply rate limiting to /partner/* only
+  - express-rate-limit: windowMs = 15 min, max = 100 req / IP
+  - Mount ONLY on the partner router, not on admin routes
 
 -----------------------------------------------------------
-PHASE 11 — SEED SCRIPT (⏱ ~20 min)
+PHASE 12 — REPORT API (⏱ ~45 min)
 -----------------------------------------------------------
 
-STEP 33: Create scripts/seed.ts
-  - Connect to MongoDB
-  - Clear existing captains and orders
-  - Insert 5–10 captains with varied status/availability/vehicleType
-  - Insert 20–30 orders with varied statuses, regions, captainIds
-  - Ensure some orders are assigned to captains
-  - Ensure some captains are inactive
-  - Log "Seed complete" and disconnect
+STEP 38: Implement report.service.ts → getOrderVolumeDrop()
+  Query params accepted:
+    previousFrom, previousTo, currentFrom, currentTo,
+    minPreviousOrders, minDropPercentage,
+    page, limit, sortBy, sortOrder
+
+  Validation:
+    - All dates: isISO8601()
+    - sortBy: isIn(['dropPercentage','dropCount','previousOrders','currentOrders'])
+    - minPreviousOrders >= 1
+    - minDropPercentage ∈ [0, 100]
+
+  MongoDB aggregation pipeline:
+    Stage 1: $match { captainId: { $ne: null } }
+    Stage 2: $facet
+      "previous": [
+        { $match: { createdAt: { $gte: previousFrom, $lte: previousTo } } },
+        { $group: { _id: "$captainId", previousOrders: { $sum: 1 } } }
+      ]
+      "current": [
+        { $match: { createdAt: { $gte: currentFrom, $lte: currentTo } } },
+        { $group: { _id: "$captainId", currentOrders: { $sum: 1 } } }
+      ]
+    Stage 3: $project to merge both facets by captainId (_id)
+    Stage 4: $lookup Captain → captainName
+    Stage 5: $project
+      captainId, captainName, previousOrders, currentOrders,
+      dropCount = { $subtract: ['$previousOrders', '$currentOrders'] }
+      dropPercentage = (dropCount / previousOrders) * 100
+    Stage 6: $match
+      previousOrders >= minPreviousOrders
+      dropPercentage >= minDropPercentage
+      dropCount > 0
+    Stage 7: $facet (pagination)
+      "data":  [ $sort, $skip, $limit ]
+      "count": [ { $count: "total" } ]
+    → returns data + total in a single aggregation round-trip
+
+STEP 39: Build report.controller.ts + report.routes.ts
+  Protected — apply at router level:
+    router.use(adminAuth)
+
+  Route:
+    GET /reports/captains/order-volume-drop
+      - Parse + validate all query params
+      - Call report.service.ts
+      - Return standard paginated response
 
 -----------------------------------------------------------
-PHASE 12 — TESTING (⏱ ~45 min)
+PHASE 13 — SEED SCRIPT (⏱ ~25 min)
 -----------------------------------------------------------
 
-STEP 34: Configure Jest (jest.config.ts or package.json)
+STEP 40: Create scripts/seed.ts
+  Order of operations:
+    1. connectDB()
+    2. Clear Captain, Order, Partner collections
+       (Do NOT clear Admin — managed by seedAdmins at startup)
+    3. Call seedPartners() → creates 2 partners, logs raw API keys to console
+    4. Insert 5–10 captains:
+         - Mix of active/inactive status
+         - Mix of online/offline availability
+         - Mix of vehicleType (bike, car, van)
+    5. Insert 20–30 orders:
+         - Mix of all statuses
+         - Mix of regions
+         - Some with captainId assigned
+         - Some with partnerId + externalReference (simulating partner orders)
+         - Some with neither (unassigned internal orders)
+    6. Log "Seed complete" and disconnect
+
+  Run with: npm run seed
+  IMPORTANT: Copy the logged raw API keys — they are shown only once
+
+-----------------------------------------------------------
+PHASE 14 — TESTING (⏱ ~45 min)
+-----------------------------------------------------------
+
+STEP 41: Configure Jest (jest.config.ts)
   - preset: 'ts-jest'
   - testEnvironment: 'node'
-  - Use a separate test DB (MONGODB_URI_TEST in .env)
-  - Global setup: connect to DB before all tests
-  - Global teardown: disconnect after all tests
+  - Separate test DB: MONGODB_URI_TEST in .env
+  - globalSetup:    connect to test DB + insert minimal fixtures
+  - globalTeardown: drop test DB + disconnect
 
-STEP 35: Write tests — Business Rules (src/__tests__/captain.test.ts)
-  Test 1: Cannot assign inactive captain to order → 400
-  Test 2: Inactive captain cannot send location update
-  Test 3: Deactivating captain sets availability to 'offline'
-  Test 4: Cannot re-assign a delivered order
-  Test 5: Captain activation/deactivation state transitions
+STEP 42: Create auth test helper (src/__tests__/helpers/auth.ts)
+  - getAdminToken(): string
+      jwt.sign({ id: 'test-id', email: 'admin@test.com', name: 'Test Admin' },
+                process.env.JWT_SECRET!, { expiresIn: '1h' })
+  - Used in every protected endpoint test as:
+      headers: { Authorization: "Bearer " + getAdminToken() }
 
-STEP 36: Write tests — Critical Endpoint (src/__tests__/order.test.ts)
-  Test 1: POST /orders — creates order with all required fields → 201
-  Test 2: POST /orders — missing required field → 400 with field error
-  Test 3: GET  /orders — filtering by status works correctly
-  Test 4: GET  /orders — filtering by region + status combined
-  Test 5: GET  /orders — text search on customerName returns correct results
-  Test 6: GET  /orders — pagination returns correct page/total meta
-  Test 7: GET  /orders/:id — returns full location and address
+STEP 43: Write tests — Auth middleware (src/__tests__/auth.test.ts)
+  Test 1:  POST /auth/login with valid creds → 200 + JWT token
+  Test 2:  POST /auth/login wrong password → 401 "Invalid credentials"
+  Test 3:  POST /auth/login unknown email → 401 "Invalid credentials"
+  Test 4:  GET /captains without token → 401
+  Test 5:  GET /captains with malformed Authorization header → 401
+  Test 6:  GET /captains with expired token → 401
+  Test 7:  GET /captains with valid token → 200
+  Test 8:  POST /partner/v1/orders with admin JWT (not x-api-key) → 401
+  Test 9:  GET /captains with partner API key (not JWT) → 401
 
-STEP 37: Write tests — Assignment (src/__tests__/assignment.test.ts)
-  Test 1: Assign active+online captain → success, order status = 'assigned'
-  Test 2: Assign inactive captain → 400
-  Test 3: Unassign captain → order status back to 'created', captainId null
-  Test 4: Assign to delivered order → 400
+STEP 44: Write tests — Business Rules (src/__tests__/captain.test.ts)
+  All requests include valid admin JWT.
+  Test 1:  Cannot assign inactive captain to order → 400
+  Test 2:  Inactive captain cannot send socket location update
+  Test 3:  Deactivating a captain sets availability to 'offline'
+  Test 4:  Cannot re-assign a delivered order → 400
+  Test 5:  Activate/deactivate state transition happy paths
 
-STEP 38: Write tests — Partner API (src/__tests__/partner.test.ts)
-  Test 1: Valid request with API key → 201
-  Test 2: Request without API key → 401
-  Test 3: Duplicate externalReference → returns existing order with 200
-  Test 4: Invalid payload → 400
+STEP 45: Write tests — Critical Endpoint (src/__tests__/order.test.ts)
+  All requests include valid admin JWT.
+  Test 1:  POST /orders with all required fields → 201
+  Test 2:  POST /orders missing required field → 400 with field error
+  Test 3:  GET /orders filter by status → correct results
+  Test 4:  GET /orders filter by region + status combined
+  Test 5:  GET /orders filter by partnerId → only partner's orders returned
+  Test 6:  GET /orders text search on customerName
+  Test 7:  GET /orders pagination meta correct (total, totalPages)
+  Test 8:  GET /orders/:id returns full location + fullAddress
+
+STEP 46: Write tests — Assignment (src/__tests__/assignment.test.ts)
+  All requests include valid admin JWT.
+  Test 1:  Assign active+online captain → 200, order status = 'assigned'
+  Test 2:  Assign inactive captain → 400
+  Test 3:  Assign offline captain → 400
+  Test 4:  Unassign → status = 'created', captainId = null
+  Test 5:  Assign to delivered order → 400
+
+STEP 47: Write tests — Partner API (src/__tests__/partner.test.ts)
+  Test 1:  POST /partner/v1/orders with valid x-api-key → 201
+  Test 2:  POST /partner/v1/orders without x-api-key → 401
+  Test 3:  POST /partner/v1/orders with wrong x-api-key → 401
+  Test 4:  Duplicate externalReference → same order returned with 200
+  Test 5:  Missing required field → 400 with validation errors
+  Test 6:  Inactive partner key → 401
 
 -----------------------------------------------------------
-PHASE 13 — DOCUMENTATION (⏱ ~30 min)
+PHASE 15 — DOCUMENTATION (⏱ ~30 min)
 -----------------------------------------------------------
 
-STEP 39: Write README.md
+STEP 48: Write README.md
   Sections:
-    1. Overview (what this is)
+    1. Overview
     2. Tech Stack
     3. Prerequisites (Node 18+, MongoDB)
     4. Setup & Run
-       - git clone ...
-       - npm install
-       - cp .env.example .env (fill in values)
-       - npm run seed
-       - npm run dev
-    5. Run Tests: npm test
-    6. API Overview (brief list of all endpoints)
-    7. Socket Events (names, payloads, rooms)
-    8. Partner API (auth, base URL, endpoints)
-    9. Docker (if added)
+         git clone ...
+         npm install
+         cp .env.example .env       ← fill in JWT_SECRET, SEED_ADMIN_*
+         npm run seed               ← seeds captains, orders, partners
+                                       (logs raw partner API keys — copy them)
+         npm run dev                ← server starts; seedAdmins runs on first boot
+    5. Getting an Admin Token
+         POST /auth/login { email, password }
+         Use returned token as: Authorization: Bearer <token>
+    6. Calling the Partner API
+         Use raw key logged during seed as: x-api-key: <raw-key>
+    7. Run Tests:  npm test
+    8. All Endpoints (with auth requirement noted per route)
+    9. Socket Events (names, payloads, auth, rooms)
+    10. Docker (if added)
 
-STEP 40: Write ASSUMPTIONS.md
-  Include:
-    - Delivered/cancelled orders cannot be re-assigned (new order required)
-    - Captain must be active AND online to receive assignment
-    - Partner API key is a single static key (not per-client tokens)
-    - Duplicate externalReference returns existing order (idempotent)
-    - Phone validation: international format /^\+?[0-9]{7,15}$/
-    - Socket auth is captainId-based (no JWT for simplicity in this scope)
-    - Text search uses MongoDB $text index (not Elasticsearch)
-    - Pagination defaults: page=1, limit=20, max limit=100
+STEP 49: Write ASSUMPTIONS.md
+  - Admins: seeded at startup, no CRUD, no roles, full access
+  - All admins are equal (flat permission model — no super-admin needed)
+  - Partner API keys: hashed in DB, raw key shown once at seed time
+  - Delivered/cancelled orders cannot be re-assigned (new order required)
+  - Captain must be ACTIVE + ONLINE to receive assignment
+  - Duplicate partner order (same partnerId + externalReference) is idempotent
+  - Phone validation pattern: /^\+?[0-9]{7,15}$/
+  - Socket admin auth uses same JWT as HTTP (one consistent security model)
+  - Text search uses MongoDB $text index (not Elasticsearch)
+  - Pagination defaults: page=1, limit=20, max limit=100
 
-STEP 41: Write TRADEOFFS.md
-  Include:
-    - MongoDB vs SQL: chose Mongo for flexibility with location data
-      and schema evolution; tradeoff is weaker joins for report queries
-    - $text index vs $regex: text index is faster but less flexible for
-      partial prefix search; documented the fallback
-    - Single API key for partner vs per-client tokens: simpler to implement
-      within timebox; production would use per-client keys with rotation
-    - No JWT for sockets: using captainId DB lookup instead; simpler but
-      less secure; production would use signed tokens
-    - No location history: only latest location stored; history would
-      require a separate collection and TTL index
-    - Report uses aggregation pipeline: powerful but complex; could be
-      moved to a read replica in production for performance
+STEP 50: Write TRADEOFFS.md
+  - JWT vs sessions: JWT is stateless and simpler; tradeoff is no
+    server-side revocation. Acceptable for an internal admin tool.
+  - Hashed partner API keys: more secure than plaintext storage;
+    prefix trick keeps lookup fast. Production: use a secrets manager.
+  - Admin seeded at startup vs registration flow: appropriate for
+    this scope; production would need an invite/email-verification flow.
+  - bcryptjs vs argon2: bcrypt is simpler and well-understood;
+    argon2 is stronger but adds unnecessary complexity here.
+  - MongoDB vs SQL: Mongo fits location data and flexible schemas well;
+    tradeoff is more complex joins/aggregations for the report query.
+  - Single static API key per partner vs OAuth2: much simpler;
+    production would use per-client OAuth2 client credentials flow.
+  - No location history: only latest location stored for write speed;
+    history would need a separate time-series collection with a TTL index.
+  - Report uses aggregation pipeline: powerful but complex; in production
+    this could be offloaded to a read replica or a materialized view.
 
-STEP 42: Create Postman/Bruno collection or OpenAPI spec
-  Option A — Postman Collection (JSON):
-    Organize into folders:
-      - Captains (CRUD + activate/deactivate)
-      - Orders (CRUD + advanced list)
-      - Assignment (assign/unassign)
-      - Partner API
-      - Reports
-    Include example request bodies and expected responses
+STEP 51: Create Postman/Bruno collection or OpenAPI spec
+  Folders in collection:
+    Auth           POST /auth/login                  (no auth)
+    Captains       CRUD + activate/deactivate         Bearer token
+    Orders         CRUD + advanced list               Bearer token
+    Assignment     assign / unassign                  Bearer token
+    Reports        order-volume-drop                  Bearer token
+    Partner API    create order                       x-api-key
 
-  Option B — OpenAPI (swagger.yaml):
-    Define all routes, request bodies, response schemas, query params
-    Add swagger-ui-express for /api-docs route (optional but impressive)
+  Each request must include:
+    - Example request body
+    - Correct auth headers
+    - Expected response shape
 
 -----------------------------------------------------------
-PHASE 14 — FINAL POLISH (⏱ ~20 min)
+PHASE 16 — FINAL POLISH (⏱ ~20 min)
 -----------------------------------------------------------
 
-STEP 43: Add Docker support (optional but recommended)
-  - Create Dockerfile:
-      FROM node:18-alpine
-      WORKDIR /app
-      COPY package*.json .
-      RUN npm ci
-      COPY . .
-      RUN npm run build
-      CMD ["node", "dist/index.js"]
-  - Create docker-compose.yml:
-      services:
-        app: (build from Dockerfile, port 3000)
-        mongo: (mongo:6 image, port 27017, named volume)
+STEP 52: Add Docker support (optional but recommended)
+  Dockerfile:
+    FROM node:18-alpine
+    WORKDIR /app
+    COPY package*.json .
+    RUN npm ci
+    COPY . .
+    RUN npm run build
+    CMD ["node", "dist/index.js"]
 
-STEP 44: Add helmet + cors + morgan to app.ts
-  - helmet() for security headers
-  - cors({ origin: '*' }) or restrict to known origins
-  - morgan('combined') for request logging
+  docker-compose.yml:
+    services:
+      app:
+        build: .
+        ports: ["3000:3000"]
+        env_file: .env
+        depends_on: [mongo]
+      mongo:
+        image: mongo:6
+        ports: ["27017:27017"]
+        volumes: [mongo-data:/data/db]
+    volumes:
+      mongo-data:
 
-STEP 45: Final review checklist
-  [ ] All required endpoints implemented and tested manually
-  [ ] Business rules enforced (inactive captain, order reassignment)
-  [ ] Advanced list: all filters, search, sort, pagination work together
-  [ ] Socket: captain can authenticate, send location, admins receive broadcast
-  [ ] Partner API: key auth, idempotency, rate limiting
-  [ ] Report API: aggregation returns correct dropCount and dropPercentage
-  [ ] All validation returns clear 400 messages with field-level errors
-  [ ] Global error handler catches unexpected errors → 500
+STEP 53: Add helmet + cors + morgan to app.ts
+  - helmet()                              → security headers
+  - cors({ origin: '*' })                 → or restrict to known origins
+  - morgan('combined')                    → HTTP request logging
+
+STEP 54: Final review checklist
+  MODELS
+  [ ] Admin model: password hashed via pre-save hook, comparePassword works
+  [ ] Partner model: apiKey hashed, apiKeyPrefix indexed, findByRawApiKey works
+  [ ] Order model: partnerId field present, sparse compound unique index set
+
+  AUTH
+  [ ] POST /auth/login returns JWT for valid admin credentials
+  [ ] POST /auth/login returns same 401 for wrong email OR wrong password
+  [ ] adminAuth blocks requests without valid JWT → 401
+  [ ] adminAuth blocks expired tokens → 401
+  [ ] partnerAuth blocks requests without valid x-api-key → 401
+  [ ] Admin routes reject partner API keys (wrong scheme)
+  [ ] Partner routes reject admin JWTs (wrong scheme)
+
+  SEEDING
+  [ ] seedAdmins() runs at startup, skips if admin already exists
+  [ ] npm run seed clears + re-seeds captains, orders, partners
+  [ ] Raw partner API keys logged to console during seed (only time visible)
+
+  FEATURES
+  [ ] All captain CRUD + activate/deactivate working
+  [ ] Deactivate auto-sets availability to offline
+  [ ] All order CRUD working
+  [ ] Assignment enforces active+online captain rule
+  [ ] Advanced order list: filters + search + sort + pagination work together
+  [ ] partnerId filter on order list works correctly
+  [ ] Socket: captain authenticates by captainId, sends location, DB updated
+  [ ] Socket: admin authenticates via JWT at handshake, joins "admins" room
+  [ ] Socket: location:updated broadcast received in "admins" room
+  [ ] Partner API: partnerId stored on created order
+  [ ] Partner API: idempotent on duplicate externalReference
+  [ ] Partner API: rate limited (100 req / 15 min)
+  [ ] Report API: dropCount + dropPercentage calculated correctly
+
+  QUALITY
+  [ ] All validation returns 400 with field-level { field, message } errors
+  [ ] Global error handler returns 500 for unknown errors (no stack trace in prod)
   [ ] .env.example committed (no real secrets)
-  [ ] README has working setup steps
-  [ ] ASSUMPTIONS.md and TRADEOFFS.md written
-  [ ] API collection or Swagger included
-  [ ] Seed script works cleanly
-  [ ] Tests pass: npm test
-  [ ] No console.log left in production paths
+  [ ] README setup steps tested end-to-end in a clean environment
+  [ ] ASSUMPTIONS.md written
+  [ ] TRADEOFFS.md written
+  [ ] API collection or Swagger spec included
+  [ ] All Jest tests pass: npm test
+  [ ] No console.log left in production code paths
 
 -----------------------------------------------------------
-QUICK REFERENCE — ALL ENDPOINTS
+QUICK REFERENCE — ALL ENDPOINTS + AUTH REQUIREMENTS
 -----------------------------------------------------------
 
-CAPTAINS
-  POST   /captains
-  GET    /captains
-  GET    /captains/:id
-  PUT    /captains/:id
-  DELETE /captains/:id
-  PATCH  /captains/:id/activate
-  PATCH  /captains/:id/deactivate
+PUBLIC (no auth required)
+  POST   /auth/login                    body: { email, password }
 
-ORDERS
-  POST   /orders
-  GET    /orders?status=&region=&captainId=&assigned=&search=
-              &dateFrom=&dateTo=&sortBy=&sortOrder=&page=&limit=
-  GET    /orders/:id
-  PUT    /orders/:id
-  DELETE /orders/:id
+ADMIN ROUTES  (header: Authorization: Bearer <JWT>)
+  CAPTAINS
+    POST   /captains
+    GET    /captains
+    GET    /captains/:id
+    PUT    /captains/:id
+    DELETE /captains/:id
+    PATCH  /captains/:id/activate
+    PATCH  /captains/:id/deactivate
 
-ASSIGNMENT
-  POST   /orders/:id/assign     body: { captainId }
-  DELETE /orders/:id/unassign
+  ORDERS
+    POST   /orders
+    GET    /orders?status=&region=&captainId=&partnerId=
+                  &assigned=&search=&dateFrom=&dateTo=
+                  &sortBy=&sortOrder=&page=&limit=
+    GET    /orders/:id
+    PUT    /orders/:id
+    DELETE /orders/:id
 
-PARTNER API  (header: x-api-key)
+  ASSIGNMENT
+    POST   /orders/:id/assign           body: { captainId }
+    DELETE /orders/:id/unassign
+
+  REPORTS
+    GET    /reports/captains/order-volume-drop
+             ?previousFrom=&previousTo=&currentFrom=&currentTo=
+             &minPreviousOrders=&minDropPercentage=
+             &page=&limit=&sortBy=&sortOrder=
+
+PARTNER ROUTES  (header: x-api-key: <raw-api-key>)
   POST   /partner/v1/orders
 
-REPORTS
-  GET    /reports/captains/order-volume-drop
-           ?previousFrom=&previousTo=&currentFrom=&currentTo=
-           &minPreviousOrders=&minDropPercentage=
-           &page=&limit=&sortBy=&sortOrder=
+-----------------------------------------------------------
+SOCKET EVENTS + AUTH
+-----------------------------------------------------------
 
-SOCKET EVENTS
-  Client emits:   captain:authenticate    { captainId }
-  Client emits:   captain:location_update { captainId, lat, lng }
-  Client emits:   admin:join              {}
-  Server emits:   authenticated           { success, captainId }
-  Server emits:   auth_error              { message }
-  Server emits:   location:updated        { captainId, lat, lng, updatedAt }
-  Server emits:   validation_error        { message }
+CAPTAIN (authenticated by captainId DB lookup):
+  Client → "captain:authenticate"      { captainId }
+  Client → "captain:location_update"   { captainId, lat, lng }
+  Server → "authenticated"             { success: true, captainId }
+  Server → "auth_error"                { message }
+  Server → "validation_error"          { message }
+
+ADMIN (authenticated by JWT in socket handshake):
+  Handshake:  socket.auth = { token: "<JWT>" }
+  Client → "admin:join"                {}
+  Server → "admin:joined"              { success: true }
+  Server → "auth_error"                { message }
+  Server → "location:updated"          { captainId, lat, lng, updatedAt }
+
+-----------------------------------------------------------
+MODEL SUMMARY
+-----------------------------------------------------------
+
+Admin      email, password(bcrypt), name
+           No CRUD API. Auto-seeded at startup. Flat access (no roles).
+
+Partner    name, apiKey(bcrypt hash), apiKeyPrefix(8-char plaintext, indexed),
+           isActive
+           No CRUD API. Seeded via npm run seed. Raw key shown once.
+
+Captain    name, phone, vehicleType, status, availability,
+           currentLocation { lat, lng, updatedAt }
+
+Order      orderNumber, customerName, customerPhone, region, fullAddress,
+           location { lat, lng }, status,
+           captainId (ref Captain), partnerId (ref Partner),
+           externalReference
 
 -----------------------------------------------------------
 END OF PLAN
