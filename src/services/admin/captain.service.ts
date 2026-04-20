@@ -10,10 +10,8 @@ export class AdminCaptainService {
     return await captainRepository.create(data);
   }
 
-  async getCaptains(filters: any, page: number = 1, limit: number = 20) {
-    const skip = (page - 1) * limit;
-    const items = await captainRepository.find(filters, {}, { createdAt: -1 }, skip, limit);
-    const total = await captainRepository.count(filters);
+  async getCaptains(filters: any, sort: any = { createdAt: -1 }, page: number = 1, limit: number = 20) {
+    const { items, total } = await captainRepository.findAll(filters, sort, page, limit);
     return {
       items,
       meta: {

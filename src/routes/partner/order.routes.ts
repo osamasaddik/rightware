@@ -3,7 +3,11 @@ import partnerOrderController from "../../controllers/partner/order.controller";
 import { protectedRoute } from "../../middleware/protected";
 import { UserRole } from "../../utils/constants";
 import { validate } from "../../middleware/validate";
-import { createOrderValidator } from "../../validators/partner/order.validator";
+import {
+  createOrderValidator,
+  getPartnerOrdersValidator,
+  getPartnerOrderByIdValidator,
+} from "../../validators/partner/order.validator";
 import rateLimit from "express-rate-limit";
 
 const router = Router();
@@ -17,9 +21,9 @@ const partnerRateLimiter = rateLimit({
 router.use(partnerRateLimiter);
 router.use(protectedRoute([UserRole.PARTNER]));
 
-router.get("/", partnerOrderController.getOrders);
+router.get("/", [...getPartnerOrdersValidator, validate], partnerOrderController.getOrders);
 
-router.get("/:id", partnerOrderController.getOrderById);
+router.get("/:id", [...getPartnerOrderByIdValidator, validate], partnerOrderController.getOrderById);
 
 router.post("/", [...createOrderValidator, validate], partnerOrderController.createOrder);
 

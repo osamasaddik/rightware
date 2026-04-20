@@ -15,7 +15,7 @@ export class AdminOrderController {
 
   async getOrders(req: Request, res: Response) {
     try {
-      const { page, limit, sortBy, sortOrder, search, ...filters } = req.query;
+      const { page, limit, sortBy, sortOrder, search, startDate, endDate, ...filters } = req.query;
 
       const sort: any = {};
       if (sortBy) {
@@ -24,7 +24,7 @@ export class AdminOrderController {
         sort.createdAt = -1;
       }
 
-      // Advanced filtering for Phase 9
+      // Advanced filtering
       const mongoFilters: any = { ...filters };
       if (search) {
         mongoFilters.$or = [
@@ -34,12 +34,20 @@ export class AdminOrderController {
         ];
       }
 
+      // Assignment state filter
       if (filters.assigned === "true") {
         mongoFilters.captainId = { $ne: null };
         delete mongoFilters.assigned;
       } else if (filters.assigned === "false") {
         mongoFilters.captainId = null;
         delete mongoFilters.assigned;
+      }
+
+      // Date range filter
+      if (startDate || endDate) {
+        mongoFilters.createdAt = {};
+        if (startDate) mongoFilters.createdAt.$gte = new Date(startDate as string);
+        if (endDate) mongoFilters.createdAt.$lte = new Date(endDate as string);
       }
 
       const result = await adminOrderService.getOrders(mongoFilters, sort, Number(page) || 1, Number(limit) || 20);

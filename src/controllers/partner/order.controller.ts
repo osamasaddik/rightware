@@ -18,8 +18,40 @@ export class PartnerOrderController {
   async getOrders(req: Request, res: Response) {
     try {
       const partnerId = (req as any).partner.id;
-      const result = await partnerOrderService.getOrders(partnerId);
-      return successApi(res, result);
+      const { page, limit, sortBy, sortOrder, search, startDate, endDate, ...filters } = req.query;
+
+      const sort: any = {};
+      if (sortBy) {
+        sort[sortBy as string] = sortOrder === "asc" ? 1 : -1;
+      } else {
+        sort.createdAt = -1;
+      }
+
+      // Build filters
+      const mongoFilters: any = { partnerId, ...filters };
+      if (search) {
+        mongoFilters.$or = [
+          { orderNumber: { $regex: search, $options: "i" } },
+          { customerName: { $regex: search, $options: "i" } },
+          { customerPhone: { $regex: search, $options: "i" } },
+        ];
+      }
+
+      // Date range filter
+      if (startDate || endDate) {
+        mongoFilters.createdAt = {};
+        if (startDate) mongoFilters.createdAt.$gte = new Date(startDate as string);
+        if (endDate) mongoFilters.createdAt.$lte = new Date(endDate as string);
+      }
+
+      const result = await partnerOrderService.getOrders(
+        partnerId,
+        mongoFilters,
+        sort,
+        Number(page) || 1,
+        Number(limit) || 20,
+      );
+      return successApi(res, result.items, 200, result.meta);
     } catch (err: any) {
       return errorApi(res, err.message, 500);
     }

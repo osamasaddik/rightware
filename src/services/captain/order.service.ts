@@ -3,9 +3,24 @@ import { OrderStatus } from "../../utils/constants";
 import { APP_MESSAGES } from "../../utils/app-messages";
 
 export class CaptainOrderService {
-  async getOrders(captainId: string) {
-    const orders = await orderRepository.getOrdersByCaptain(captainId);
-    return { orders, total: orders.length };
+  async getOrders(
+    captainId: string,
+    filters: any = {},
+    sort: any = { createdAt: -1 },
+    page: number = 1,
+    limit: number = 20,
+  ) {
+    const mongoFilters = { captainId, ...filters };
+    const { items, total } = await orderRepository.findWithFilters(mongoFilters, sort, page, limit);
+    return {
+      items,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async getOrderById(orderId: string, captainId: string) {

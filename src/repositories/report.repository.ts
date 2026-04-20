@@ -1,10 +1,7 @@
 import Order from "../models/Order";
-import { BaseRepository } from "./base.repository";
 
-export class ReportRepository extends BaseRepository<any> {
-  constructor() {
-    super(Order as any);
-  }
+export class ReportRepository {
+  private model = Order;
 
   async getOrderVolumeDrop(params: {
     previousFrom: Date;
@@ -145,7 +142,7 @@ export class ReportRepository extends BaseRepository<any> {
             { $skip: (page - 1) * limit },
             { $limit: limit },
           ],
-          total: [{ $count: "count" }],
+          metadata: [{ $count: "total" }],
         },
       },
     ];
@@ -154,7 +151,7 @@ export class ReportRepository extends BaseRepository<any> {
 
     return {
       items: result[0].data,
-      total: result[0].total[0]?.count || 0,
+      total: result[0].metadata[0]?.total || 0,
     };
   }
 }

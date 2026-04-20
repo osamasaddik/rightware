@@ -19,9 +19,24 @@ export class PartnerOrderService {
     return { order, isNew: true };
   }
 
-  async getOrders(partnerId: string) {
-    const orders = await orderRepository.find({ partnerId }, {}, { createdAt: -1 });
-    return { orders, total: orders.length };
+  async getOrders(
+    partnerId: string,
+    filters: any = {},
+    sort: any = { createdAt: -1 },
+    page: number = 1,
+    limit: number = 20,
+  ) {
+    const mongoFilters = { partnerId, ...filters };
+    const { items, total } = await orderRepository.findWithFilters(mongoFilters, sort, page, limit);
+    return {
+      items,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async getOrderById(orderId: string, partnerId: string) {

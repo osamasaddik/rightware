@@ -12,9 +12,7 @@ export class AdminOrderService {
   }
 
   async getOrders(filters: any, sort: any = { createdAt: -1 }, page: number = 1, limit: number = 20) {
-    const skip = (page - 1) * limit;
-    const items = await orderRepository.findWithFilters(filters, sort, skip, limit);
-    const total = await orderRepository.count(filters);
+    const { items, total } = await orderRepository.findWithFilters(filters, sort, page, limit);
     return {
       items,
       meta: {

@@ -15,8 +15,22 @@ export class AdminCaptainController {
 
   async getCaptains(req: Request, res: Response) {
     try {
-      const { page, limit, ...filters } = req.query;
-      const result = await adminCaptainService.getCaptains(filters, Number(page) || 1, Number(limit) || 20);
+      const { page, limit, sortBy, sortOrder, search, ...filters } = req.query;
+
+      const sort: any = {};
+      if (sortBy) {
+        sort[sortBy as string] = sortOrder === "asc" ? 1 : -1;
+      } else {
+        sort.createdAt = -1;
+      }
+
+      // Build filters
+      const mongoFilters: any = { ...filters };
+      if (search) {
+        mongoFilters.$or = [{ name: { $regex: search, $options: "i" } }, { phone: { $regex: search, $options: "i" } }];
+      }
+
+      const result = await adminCaptainService.getCaptains(mongoFilters, sort, Number(page) || 1, Number(limit) || 20);
       return successApi(res, result.items, 200, result.meta);
     } catch (err: any) {
       return errorApi(res, err.message);
