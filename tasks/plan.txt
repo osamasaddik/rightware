@@ -1,0 +1,613 @@
+===========================================================
+  BACKEND TAKE-HOME ASSESSMENT — COMPLETE STEP-BY-STEP PLAN
+  Track A: Delivery Operations Backend
+===========================================================
+
+ESTIMATED TOTAL TIME: ~6–8 hours
+Stack: Node.js + TypeScript, MongoDB, Express, Socket.IO
+
+-----------------------------------------------------------
+PHASE 1 — PROJECT SETUP (⏱ ~30 min)
+-----------------------------------------------------------
+
+STEP 1: Initialize the project
+  - Run: mkdir delivery-backend && cd delivery-backend
+  - Run: npm init -y
+  - Run: git init
+  - Create .gitignore (node_modules, dist, .env)
+
+STEP 2: Install core dependencies
+  - Production:
+      npm install express mongoose socket.io dotenv
+                  express-validator cors helmet morgan
+                  express-rate-limit uuid
+  - Dev:
+      npm install -D typescript ts-node nodemon
+                  @types/express @types/node @types/cors
+                  @types/morgan @types/uuid
+                  jest ts-jest @types/jest supertest @types/supertest
+
+STEP 3: Configure TypeScript
+  - Run: npx tsc --init
+  - Set in tsconfig.json:
+      "target": "ES2020"
+      "module": "commonjs"
+      "outDir": "./dist"
+      "rootDir": "./src"
+      "strict": true
+      "esModuleInterop": true
+
+STEP 4: Set up folder structure
+  src/
+  ├── config/
+  │   └── db.ts                  (MongoDB connection)
+  ├── models/
+  │   ├── Captain.ts
+  │   └── Order.ts
+  ├── routes/
+  │   ├── captain.routes.ts
+  │   ├── order.routes.ts
+  │   ├── assignment.routes.ts
+  │   ├── partner.routes.ts
+  │   └── report.routes.ts
+  ├── controllers/
+  │   ├── captain.controller.ts
+  │   ├── order.controller.ts
+  │   ├── assignment.controller.ts
+  │   ├── partner.controller.ts
+  │   └── report.controller.ts
+  ├── services/
+  │   ├── captain.service.ts
+  │   ├── order.service.ts
+  │   ├── assignment.service.ts
+  │   └── report.service.ts
+  ├── sockets/
+  │   └── location.socket.ts
+  ├── middleware/
+  │   ├── validate.ts            (express-validator error handler)
+  │   ├── partnerAuth.ts         (API key middleware)
+  │   └── errorHandler.ts        (global error handler)
+  ├── utils/
+  │   └── apiResponse.ts         (standard response shape)
+  ├── types/
+  │   └── index.ts               (shared TS types/interfaces)
+  └── app.ts                     (Express app factory)
+  index.ts                       (entry point, starts server + socket)
+
+STEP 5: Create .env and .env.example
+  PORT=3000
+  MONGODB_URI=mongodb://localhost:27017/delivery-backend
+  PARTNER_API_KEY=supersecretkey123
+
+STEP 6: Set up scripts in package.json
+  "dev":   "nodemon --exec ts-node src/index.ts"
+  "build": "tsc"
+  "start": "node dist/index.js"
+  "test":  "jest --runInBand --forceExit"
+  "seed":  "ts-node scripts/seed.ts"
+
+-----------------------------------------------------------
+PHASE 2 — DATABASE MODELS (⏱ ~30 min)
+-----------------------------------------------------------
+
+STEP 7: Create Captain model (src/models/Captain.ts)
+  Fields:
+    - name:            String, required
+    - phone:           String, required, unique
+    - vehicleType:     String, enum: ['bike','car','van'], required
+    - status:          String, enum: ['active','inactive'], default: 'active'
+    - availability:    String, enum: ['online','offline'], default: 'offline'
+    - currentLocation:
+        lat:           Number (optional)
+        lng:           Number (optional)
+        updatedAt:     Date (optional)
+    - timestamps:      true (createdAt, updatedAt auto)
+
+  Index:
+    - phone (unique)
+
+STEP 8: Create Order model (src/models/Order.ts)
+  Fields:
+    - orderNumber:       String, required, unique (auto-generated)
+    - customerName:      String, required
+    - customerPhone:     String, required
+    - region:            String, required
+    - fullAddress:       String, required
+    - location:
+        lat:             Number, required
+        lng:             Number, required
+    - status:            String, enum: ['created','assigned','picked_up',
+                         'delivered','cancelled'], default: 'created'
+    - captainId:         ObjectId ref 'Captain', nullable
+    - externalReference: String, nullable (for partner API)
+    - timestamps:        true
+
+  Indexes:
+    - orderNumber (unique)
+    - status, region, captainId (for filtering performance)
+    - Text index on: orderNumber, customerName, customerPhone
+
+STEP 9: Create MongoDB connection (src/config/db.ts)
+  - Use mongoose.connect(process.env.MONGODB_URI)
+  - Log success/failure
+  - Export connectDB function
+
+-----------------------------------------------------------
+PHASE 3 — UTILITY LAYER (⏱ ~20 min)
+-----------------------------------------------------------
+
+STEP 10: Create standard API response helper (src/utils/apiResponse.ts)
+  - success(res, data, statusCode=200, meta?)
+  - error(res, message, statusCode=400, details?)
+  - All responses follow shape:
+    {
+      success: true/false,
+      data: ...,
+      meta: { page, limit, total },  // for list endpoints
+      message: "...",
+      errors: [...]                  // for validation failures
+    }
+
+STEP 11: Create global error handler (src/middleware/errorHandler.ts)
+  - Catch Mongoose validation errors → 400
+  - Catch duplicate key errors (code 11000) → 409
+  - Catch unknown errors → 500
+  - Never leak stack traces in production
+
+STEP 12: Create validation middleware (src/middleware/validate.ts)
+  - Uses express-validator's validationResult
+  - If errors exist, return 400 with array of field errors
+  - Export as: validate = (req, res, next) => { ... }
+
+STEP 13: Create partner API key middleware (src/middleware/partnerAuth.ts)
+  - Read x-api-key header
+  - Compare with process.env.PARTNER_API_KEY
+  - Return 401 if missing or invalid
+
+-----------------------------------------------------------
+PHASE 4 — CAPTAIN CRUD (⏱ ~45 min)
+-----------------------------------------------------------
+
+STEP 14: Build captain.service.ts
+  Functions:
+    - createCaptain(data)
+    - getCaptains(query)           // for list with filters
+    - getCaptainById(id)
+    - updateCaptain(id, data)
+    - deleteCaptain(id)            // soft or hard delete
+    - activateCaptain(id)
+    - deactivateCaptain(id)
+
+  Business Rules (enforce in service layer):
+    - Phone must match regex: /^\+?[0-9]{7,15}$/
+    - Cannot activate a captain that is already active
+    - Cannot deactivate a captain that is already inactive
+    - Deactivating a captain sets availability to 'offline' automatically
+
+STEP 15: Build captain.controller.ts
+  - POST   /captains              → createCaptain
+  - GET    /captains              → listCaptains (with optional filters)
+  - GET    /captains/:id          → getCaptainById
+  - PUT    /captains/:id          → updateCaptain
+  - DELETE /captains/:id          → deleteCaptain
+  - PATCH  /captains/:id/activate   → activateCaptain
+  - PATCH  /captains/:id/deactivate → deactivateCaptain
+
+STEP 16: Add input validation rules for captain routes
+  - name: notEmpty
+  - phone: matches phone regex
+  - vehicleType: isIn(['bike','car','van'])
+  - lat/lng (if provided): isFloat({ min: -90, max: 90 }) / isFloat({ min: -180, max: 180 })
+
+-----------------------------------------------------------
+PHASE 5 — ORDER CRUD (⏱ ~45 min)
+-----------------------------------------------------------
+
+STEP 17: Build order.service.ts
+  Functions:
+    - createOrder(data)
+    - getOrders(filters, sort, pagination)  // advanced list
+    - getOrderById(id)
+    - updateOrder(id, data)
+    - deleteOrder(id)
+
+  Business Rules:
+    - orderNumber auto-generated on create (e.g., "ORD-" + Date.now())
+    - Cannot reassign a delivered/cancelled order
+      (document in ASSUMPTIONS.md: "We block re-assignment of
+       delivered/cancelled orders to protect data integrity.
+       A new order must be created instead.")
+    - location.lat must be in [-90, 90]
+    - location.lng must be in [-180, 180]
+
+STEP 18: Build order.controller.ts
+  - POST   /orders       → createOrder
+  - GET    /orders        → listOrders (advanced, see Phase 7)
+  - GET    /orders/:id    → getOrderById (must include full location/address)
+  - PUT    /orders/:id    → updateOrder
+  - DELETE /orders/:id    → deleteOrder
+
+STEP 19: Add input validation rules for order routes
+  - customerName: notEmpty
+  - customerPhone: matches phone regex
+  - region: notEmpty
+  - fullAddress: notEmpty
+  - location.lat: isFloat({ min: -90, max: 90 })
+  - location.lng: isFloat({ min: -180, max: 180 })
+
+-----------------------------------------------------------
+PHASE 6 — ASSIGNMENT (⏱ ~30 min)
+-----------------------------------------------------------
+
+STEP 20: Build assignment.service.ts
+  Functions:
+    - assignCaptain(orderId, captainId)
+    - unassignCaptain(orderId)
+
+  Business Rules:
+    - Captain must exist and be ACTIVE to be assigned
+    - Captain must be ONLINE (availability = 'online') to be assigned
+      (document assumption if you want to relax this)
+    - Order must be in 'created' or 'assigned' status to be re-assigned
+    - Assigning a captain sets order status to 'assigned'
+    - Unassigning sets captainId to null and order status back to 'created'
+
+STEP 21: Build assignment.controller.ts
+  - POST   /orders/:id/assign      → body: { captainId }
+  - DELETE /orders/:id/unassign    → unassign captain
+
+-----------------------------------------------------------
+PHASE 7 — ADVANCED ORDER LIST (⏱ ~45 min)
+-----------------------------------------------------------
+
+STEP 22: Implement filtering in order.service.ts → getOrders()
+  Filters to support (all optional, combinable):
+    - status        → { status: req.query.status }
+    - region        → { region: req.query.region }
+    - captainId     → { captainId: req.query.captainId }
+    - dateFrom/dateTo → { createdAt: { $gte, $lte } }
+    - assigned      → if 'true': { captainId: { $ne: null } }
+                       if 'false': { captainId: null }
+
+STEP 23: Implement text search in getOrders()
+  - Add MongoDB text index on: orderNumber, customerName, customerPhone
+  - If query.search is present: add $text: { $search: query.search } to filter
+  - For partial/prefix search fallback, use $or with $regex
+
+STEP 24: Implement sorting in getOrders()
+  Allowed sort fields: createdAt, updatedAt, status
+  - Default: createdAt DESC
+  - Build sort object dynamically from query.sortBy + query.sortOrder
+  - Reject unknown sort fields → 400
+
+STEP 25: Implement pagination in getOrders()
+  - Accept: page (default 1), limit (default 20, max 100)
+  - Use .skip((page-1)*limit).limit(limit)
+  - Run countDocuments() with same filter for total
+  - Return meta: { page, limit, total, totalPages }
+
+-----------------------------------------------------------
+PHASE 8 — REAL-TIME LOCATION (⏱ ~45 min)
+-----------------------------------------------------------
+
+STEP 26: Set up Socket.IO server (src/index.ts)
+  - Attach Socket.IO to HTTP server
+  - Pass io instance to location socket handler
+  - Export io for use in controllers if needed
+
+STEP 27: Implement location socket handler (src/sockets/location.socket.ts)
+  Event design:
+    CLIENT → SERVER:
+      "captain:authenticate"
+        Payload: { captainId: string }
+        Server: verify captainId exists and is active
+                join room: "captain:<captainId>"
+                emit back: "authenticated" or "auth_error"
+
+      "captain:location_update"
+        Payload: { captainId: string, lat: number, lng: number }
+        Server:
+          1. Validate lat/lng ranges
+          2. Check captain is active (re-verify)
+          3. Update captain.currentLocation in DB
+          4. Emit "location:updated" to room "admins"
+             and to room "order:<orderId>" if captain has active order
+        Broadcast payload:
+          { captainId, lat, lng, updatedAt }
+
+    SERVER → CLIENT:
+      "authenticated"      → { success: true, captainId }
+      "auth_error"         → { message: "..." }
+      "location:updated"   → { captainId, lat, lng, updatedAt }
+      "validation_error"   → { message: "Invalid lat/lng" }
+
+  Admin listeners:
+    - Admins join via: "admin:join" event
+    - Server puts them in "admins" room
+    - They receive all "location:updated" broadcasts
+
+  Document in README:
+    - All event names
+    - All payload formats
+    - Authentication approach (captainId-based, with DB check)
+    - How listeners (admins) subscribe
+
+STEP 28: Enforce inactive captain restriction in socket handler
+  - Before processing "captain:location_update":
+    - Re-fetch captain from DB
+    - If status === 'inactive', emit "auth_error" and disconnect
+
+-----------------------------------------------------------
+PHASE 9 — PARTNER API (⏱ ~30 min)
+-----------------------------------------------------------
+
+STEP 29: Design partner API (src/routes/partner.routes.ts)
+  Base path: /partner/v1
+  Auth: x-api-key header (partnerAuth middleware on all routes)
+
+  Endpoint:
+    POST /partner/v1/orders
+      - Creates a new order on behalf of a partner
+      - Accepts same fields as internal order create
+      - Additionally accepts: externalReference (string, optional)
+      - Idempotency: if externalReference already exists → return existing
+        order with 200 instead of creating duplicate
+        (document this in ASSUMPTIONS.md)
+      - Rate limiting: 100 requests per 15 minutes per API key IP
+
+STEP 30: Apply rate limiting to partner API
+  - Use express-rate-limit
+  - windowMs: 15 * 60 * 1000 (15 min)
+  - max: 100
+  - Apply only to /partner/* routes
+
+-----------------------------------------------------------
+PHASE 10 — REPORT API (⏱ ~45 min)
+-----------------------------------------------------------
+
+STEP 31: Implement report.service.ts → getOrderVolumeDrop()
+  Logic:
+    1. Accept: previousFrom, previousTo, currentFrom, currentTo,
+               minPreviousOrders, minDropPercentage, page, limit,
+               sortBy, sortOrder
+
+    2. Validate all date params are valid ISO dates
+       Validate sortBy is one of: dropPercentage, dropCount,
+       previousOrders, currentOrders
+
+    3. Use MongoDB aggregation pipeline:
+       Stage 1: $facet or two separate $group stages:
+         - Group orders by captainId where captainId != null
+           and createdAt is within previousFrom–previousTo
+           → previousCount per captain
+         - Group orders by captainId where captainId != null
+           and createdAt is within currentFrom–currentTo
+           → currentCount per captain
+
+       Stage 2: $lookup captains to get captainName
+
+       Stage 3: $project:
+         - captainId
+         - captainName
+         - previousOrders
+         - currentOrders
+         - dropCount = previousOrders - currentOrders
+         - dropPercentage = ((previousOrders - currentOrders)
+                             / previousOrders) * 100
+
+       Stage 4: $match:
+         - previousOrders >= minPreviousOrders
+         - dropPercentage >= minDropPercentage
+         - dropCount > 0 (only actual drops)
+
+       Stage 5: $sort by chosen sortBy/sortOrder
+       Stage 6: $skip + $limit for pagination
+       Stage 7: $count for total (use $facet to get both in one query)
+
+    4. Return paginated list with meta
+
+STEP 32: Build report.controller.ts
+  - GET /reports/captains/order-volume-drop
+  - Parse and validate all query params
+  - Call report.service.ts
+  - Return standard paginated response
+
+-----------------------------------------------------------
+PHASE 11 — SEED SCRIPT (⏱ ~20 min)
+-----------------------------------------------------------
+
+STEP 33: Create scripts/seed.ts
+  - Connect to MongoDB
+  - Clear existing captains and orders
+  - Insert 5–10 captains with varied status/availability/vehicleType
+  - Insert 20–30 orders with varied statuses, regions, captainIds
+  - Ensure some orders are assigned to captains
+  - Ensure some captains are inactive
+  - Log "Seed complete" and disconnect
+
+-----------------------------------------------------------
+PHASE 12 — TESTING (⏱ ~45 min)
+-----------------------------------------------------------
+
+STEP 34: Configure Jest (jest.config.ts or package.json)
+  - preset: 'ts-jest'
+  - testEnvironment: 'node'
+  - Use a separate test DB (MONGODB_URI_TEST in .env)
+  - Global setup: connect to DB before all tests
+  - Global teardown: disconnect after all tests
+
+STEP 35: Write tests — Business Rules (src/__tests__/captain.test.ts)
+  Test 1: Cannot assign inactive captain to order → 400
+  Test 2: Inactive captain cannot send location update
+  Test 3: Deactivating captain sets availability to 'offline'
+  Test 4: Cannot re-assign a delivered order
+  Test 5: Captain activation/deactivation state transitions
+
+STEP 36: Write tests — Critical Endpoint (src/__tests__/order.test.ts)
+  Test 1: POST /orders — creates order with all required fields → 201
+  Test 2: POST /orders — missing required field → 400 with field error
+  Test 3: GET  /orders — filtering by status works correctly
+  Test 4: GET  /orders — filtering by region + status combined
+  Test 5: GET  /orders — text search on customerName returns correct results
+  Test 6: GET  /orders — pagination returns correct page/total meta
+  Test 7: GET  /orders/:id — returns full location and address
+
+STEP 37: Write tests — Assignment (src/__tests__/assignment.test.ts)
+  Test 1: Assign active+online captain → success, order status = 'assigned'
+  Test 2: Assign inactive captain → 400
+  Test 3: Unassign captain → order status back to 'created', captainId null
+  Test 4: Assign to delivered order → 400
+
+STEP 38: Write tests — Partner API (src/__tests__/partner.test.ts)
+  Test 1: Valid request with API key → 201
+  Test 2: Request without API key → 401
+  Test 3: Duplicate externalReference → returns existing order with 200
+  Test 4: Invalid payload → 400
+
+-----------------------------------------------------------
+PHASE 13 — DOCUMENTATION (⏱ ~30 min)
+-----------------------------------------------------------
+
+STEP 39: Write README.md
+  Sections:
+    1. Overview (what this is)
+    2. Tech Stack
+    3. Prerequisites (Node 18+, MongoDB)
+    4. Setup & Run
+       - git clone ...
+       - npm install
+       - cp .env.example .env (fill in values)
+       - npm run seed
+       - npm run dev
+    5. Run Tests: npm test
+    6. API Overview (brief list of all endpoints)
+    7. Socket Events (names, payloads, rooms)
+    8. Partner API (auth, base URL, endpoints)
+    9. Docker (if added)
+
+STEP 40: Write ASSUMPTIONS.md
+  Include:
+    - Delivered/cancelled orders cannot be re-assigned (new order required)
+    - Captain must be active AND online to receive assignment
+    - Partner API key is a single static key (not per-client tokens)
+    - Duplicate externalReference returns existing order (idempotent)
+    - Phone validation: international format /^\+?[0-9]{7,15}$/
+    - Socket auth is captainId-based (no JWT for simplicity in this scope)
+    - Text search uses MongoDB $text index (not Elasticsearch)
+    - Pagination defaults: page=1, limit=20, max limit=100
+
+STEP 41: Write TRADEOFFS.md
+  Include:
+    - MongoDB vs SQL: chose Mongo for flexibility with location data
+      and schema evolution; tradeoff is weaker joins for report queries
+    - $text index vs $regex: text index is faster but less flexible for
+      partial prefix search; documented the fallback
+    - Single API key for partner vs per-client tokens: simpler to implement
+      within timebox; production would use per-client keys with rotation
+    - No JWT for sockets: using captainId DB lookup instead; simpler but
+      less secure; production would use signed tokens
+    - No location history: only latest location stored; history would
+      require a separate collection and TTL index
+    - Report uses aggregation pipeline: powerful but complex; could be
+      moved to a read replica in production for performance
+
+STEP 42: Create Postman/Bruno collection or OpenAPI spec
+  Option A — Postman Collection (JSON):
+    Organize into folders:
+      - Captains (CRUD + activate/deactivate)
+      - Orders (CRUD + advanced list)
+      - Assignment (assign/unassign)
+      - Partner API
+      - Reports
+    Include example request bodies and expected responses
+
+  Option B — OpenAPI (swagger.yaml):
+    Define all routes, request bodies, response schemas, query params
+    Add swagger-ui-express for /api-docs route (optional but impressive)
+
+-----------------------------------------------------------
+PHASE 14 — FINAL POLISH (⏱ ~20 min)
+-----------------------------------------------------------
+
+STEP 43: Add Docker support (optional but recommended)
+  - Create Dockerfile:
+      FROM node:18-alpine
+      WORKDIR /app
+      COPY package*.json .
+      RUN npm ci
+      COPY . .
+      RUN npm run build
+      CMD ["node", "dist/index.js"]
+  - Create docker-compose.yml:
+      services:
+        app: (build from Dockerfile, port 3000)
+        mongo: (mongo:6 image, port 27017, named volume)
+
+STEP 44: Add helmet + cors + morgan to app.ts
+  - helmet() for security headers
+  - cors({ origin: '*' }) or restrict to known origins
+  - morgan('combined') for request logging
+
+STEP 45: Final review checklist
+  [ ] All required endpoints implemented and tested manually
+  [ ] Business rules enforced (inactive captain, order reassignment)
+  [ ] Advanced list: all filters, search, sort, pagination work together
+  [ ] Socket: captain can authenticate, send location, admins receive broadcast
+  [ ] Partner API: key auth, idempotency, rate limiting
+  [ ] Report API: aggregation returns correct dropCount and dropPercentage
+  [ ] All validation returns clear 400 messages with field-level errors
+  [ ] Global error handler catches unexpected errors → 500
+  [ ] .env.example committed (no real secrets)
+  [ ] README has working setup steps
+  [ ] ASSUMPTIONS.md and TRADEOFFS.md written
+  [ ] API collection or Swagger included
+  [ ] Seed script works cleanly
+  [ ] Tests pass: npm test
+  [ ] No console.log left in production paths
+
+-----------------------------------------------------------
+QUICK REFERENCE — ALL ENDPOINTS
+-----------------------------------------------------------
+
+CAPTAINS
+  POST   /captains
+  GET    /captains
+  GET    /captains/:id
+  PUT    /captains/:id
+  DELETE /captains/:id
+  PATCH  /captains/:id/activate
+  PATCH  /captains/:id/deactivate
+
+ORDERS
+  POST   /orders
+  GET    /orders?status=&region=&captainId=&assigned=&search=
+              &dateFrom=&dateTo=&sortBy=&sortOrder=&page=&limit=
+  GET    /orders/:id
+  PUT    /orders/:id
+  DELETE /orders/:id
+
+ASSIGNMENT
+  POST   /orders/:id/assign     body: { captainId }
+  DELETE /orders/:id/unassign
+
+PARTNER API  (header: x-api-key)
+  POST   /partner/v1/orders
+
+REPORTS
+  GET    /reports/captains/order-volume-drop
+           ?previousFrom=&previousTo=&currentFrom=&currentTo=
+           &minPreviousOrders=&minDropPercentage=
+           &page=&limit=&sortBy=&sortOrder=
+
+SOCKET EVENTS
+  Client emits:   captain:authenticate    { captainId }
+  Client emits:   captain:location_update { captainId, lat, lng }
+  Client emits:   admin:join              {}
+  Server emits:   authenticated           { success, captainId }
+  Server emits:   auth_error              { message }
+  Server emits:   location:updated        { captainId, lat, lng, updatedAt }
+  Server emits:   validation_error        { message }
+
+-----------------------------------------------------------
+END OF PLAN
+-----------------------------------------------------------
