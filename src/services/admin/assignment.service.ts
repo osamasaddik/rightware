@@ -23,10 +23,12 @@ export class AssignmentService {
       throw new Error("Captain is not online");
     }
 
-    return await orderRepository.update(orderId, {
+    const updated = await orderRepository.update(orderId, {
       captainId,
       status: OrderStatus.ASSIGNED,
     });
+    console.log(`📦 ${APP_MESSAGES.ORDER.ASSIGNED} - Order ID: ${orderId}, Captain: ${captain.name} (${captainId})`);
+    return updated;
   }
 
   async unassignCaptain(orderId: string) {
@@ -37,10 +39,12 @@ export class AssignmentService {
       throw new Error("Cannot unassign from delivered or cancelled orders");
     }
 
-    return await orderRepository.update(orderId, {
+    const updated = await orderRepository.update(orderId, {
       captainId: null,
       status: OrderStatus.CREATED,
     });
+    console.log(`🔄 ${APP_MESSAGES.ORDER.UNASSIGNED} - Order ID: ${orderId}`);
+    return updated;
   }
 }
 

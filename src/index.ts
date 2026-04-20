@@ -27,7 +27,7 @@ const startServer = async () => {
 
   // Start Server
   const PORT = config.PORT;
-  httpServer.listen(PORT, () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server is running on port ${PORT}`);
     console.log(`Socket.IO is enabled`);
   });

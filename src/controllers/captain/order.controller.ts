@@ -13,6 +13,17 @@ export class CaptainOrderController {
     }
   }
 
+  async getOrderById(req: Request, res: Response) {
+    try {
+      const captainId = (req as any).user.id;
+      const { id } = req.params;
+      const order = await captainOrderService.getOrderById(id as string, captainId);
+      return successApi(res, { order });
+    } catch (err: any) {
+      return errorApi(res, err.message, 404);
+    }
+  }
+
   async updateOrderStatus(req: Request, res: Response) {
     try {
       const captainId = (req as any).user.id;

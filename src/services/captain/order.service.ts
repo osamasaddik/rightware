@@ -8,6 +8,14 @@ export class CaptainOrderService {
     return { orders, total: orders.length };
   }
 
+  async getOrderById(orderId: string, captainId: string) {
+    const order = await orderRepository.getOrderById(orderId, captainId);
+    if (!order) {
+      throw new Error("Order not found or not assigned to you");
+    }
+    return order;
+  }
+
   async updateOrderStatus(orderId: string, captainId: string, status: OrderStatus) {
     const order = await orderRepository.getOrderById(orderId, captainId);
 

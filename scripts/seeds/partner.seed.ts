@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import Partner from "../../src/models/Partner";
 
@@ -10,7 +10,7 @@ export const seedPartners = async () => {
   const partners = [{ name: "Acme Corp" }, { name: "Global Logistics" }];
 
   for (const p of partners) {
-    const rawKey = uuidv4().replace(/-/g, "");
+    const rawKey = crypto.randomBytes(16).toString("hex");
     const apiKeyPrefix = rawKey.slice(0, 8);
     const hashedKey = await bcrypt.hash(rawKey, 10);
 

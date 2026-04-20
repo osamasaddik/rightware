@@ -1,15 +1,33 @@
-FROM node:18-alpine
+FROM node:18-alpine AS builder
 
 WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install
+RUN npm ci --only=production && npm cache clean --force
 
-COPY . .
+COPY tsconfig.json ./
+COPY src ./src
 
-RUN npm run build
+RUN npm install -D typescript @types/node && \
+    npm run build && \
+    npm prune --production
+
+FROM node:18-alpine
+
+WORKDIR /app
+
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
+COPY --chown=nodejs:nodejs package*.json ./
+
+USER nodejs
 
 EXPOSE 3000
+
+ENV NODE_ENV=production
 
 CMD ["node", "dist/index.js"]

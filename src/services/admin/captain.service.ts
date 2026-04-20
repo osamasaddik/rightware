@@ -48,7 +48,9 @@ export class AdminCaptainService {
     if (!captain) throw new Error("Captain not found");
     if (captain.status === "active") throw new Error("Captain is already active");
 
-    return await captainRepository.update(id, { status: "active" });
+    const updated = await captainRepository.update(id, { status: "active" });
+    console.log(`✅ ${APP_MESSAGES.CAPTAIN.ACTIVATED} - Captain ID: ${id}, Name: ${captain.name}`);
+    return updated;
   }
 
   async deactivateCaptain(id: string) {
@@ -56,10 +58,12 @@ export class AdminCaptainService {
     if (!captain) throw new Error("Captain not found");
     if (captain.status === "inactive") throw new Error("Captain is already inactive");
 
-    return await captainRepository.update(id, {
+    const updated = await captainRepository.update(id, {
       status: "inactive",
       availability: "offline",
     });
+    console.log(`⛔ ${APP_MESSAGES.CAPTAIN.DEACTIVATED} - Captain ID: ${id}, Name: ${captain.name}`);
+    return updated;
   }
 }
 

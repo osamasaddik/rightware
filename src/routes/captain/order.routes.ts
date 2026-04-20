@@ -11,6 +11,8 @@ router.use(protectedRoute([UserRole.CAPTAIN]));
 
 router.get("/", captainOrderController.getOrders);
 
+router.get("/:id", captainOrderController.getOrderById);
+
 router.patch(
   "/:id/status",
   [body("status").isIn(Object.values(OrderStatus)).withMessage("Invalid status value"), validate],

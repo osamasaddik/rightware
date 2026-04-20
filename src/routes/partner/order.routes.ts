@@ -17,6 +17,10 @@ const partnerRateLimiter = rateLimit({
 router.use(partnerRateLimiter);
 router.use(protectedRoute([UserRole.PARTNER]));
 
+router.get("/", partnerOrderController.getOrders);
+
+router.get("/:id", partnerOrderController.getOrderById);
+
 router.post(
   "/",
   [
@@ -28,7 +32,7 @@ router.post(
     body("location.lng").isFloat({ min: -180, max: 180 }),
     validate,
   ],
-  partnerOrderController.createOrder
+  partnerOrderController.createOrder,
 );
 
 export default router;
