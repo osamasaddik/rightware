@@ -1,18 +1,16 @@
 import Admin from "../../src/models/Admin";
+import { config } from "../../src/config";
 
 export const seedAdmin = async () => {
   console.log("Seeding Admin...");
 
   await Admin.deleteMany({});
 
-  const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@delivery.com";
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD || "Admin@1234";
-
   await Admin.create({
     name: "Super Admin",
-    email: adminEmail,
-    password: adminPassword, // Will be hashed by pre-save hook
+    email: config.SEED_ADMIN_EMAIL,
+    password: config.SEED_ADMIN_PASSWORD, // Will be hashed by pre-save hook
   });
 
-  console.log(`Admin seeded: ${adminEmail} / ${adminPassword}`);
+  console.log(`Admin seeded: ${config.SEED_ADMIN_EMAIL} / ${config.SEED_ADMIN_PASSWORD}`);
 };

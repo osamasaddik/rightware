@@ -1,5 +1,5 @@
-import Order from "../../models/Order";
-import { BaseRepository } from "../base.repository";
+import Order from "../models/Order";
+import { BaseRepository } from "./base.repository";
 
 export class ReportRepository extends BaseRepository<any> {
   constructor() {

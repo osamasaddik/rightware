@@ -1,5 +1,5 @@
-import Captain from "../../models/Captain";
-import { BaseRepository } from "../base.repository";
+import Captain from "../models/Captain";
+import { BaseRepository } from "./base.repository";
 
 export class CaptainRepository extends BaseRepository<any> {
   constructor() {

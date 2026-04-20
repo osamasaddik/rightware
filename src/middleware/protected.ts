@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { error } from "../utils/apiResponse";
+import { errorApi } from "../utils/apiResponse";
 import Admin from "../models/Admin";
 import Partner from "../models/Partner";
 import Captain from "../models/Captain";
@@ -29,7 +29,7 @@ export const protectedRoute = (roles: UserRole[] = []) => {
       }
 
       if (!authType) {
-        return error(res, APP_MESSAGES.AUTH.NOT_AUTHORIZED, 401);
+        return errorApi(res, APP_MESSAGES.AUTH.NOT_AUTHORIZED, 401);
       }
 
       if (authType === "jwt") {
@@ -38,7 +38,7 @@ export const protectedRoute = (roles: UserRole[] = []) => {
         if (decoded.role === UserRole.ADMIN) {
           const admin = await Admin.findById(decoded.id).select("-password");
           if (!admin) {
-            return error(res, APP_MESSAGES.AUTH.ADMIN_NOT_FOUND, 401);
+            return errorApi(res, APP_MESSAGES.AUTH.ADMIN_NOT_FOUND, 401);
           }
           req.admin = admin;
           req.user = admin;
@@ -46,18 +46,18 @@ export const protectedRoute = (roles: UserRole[] = []) => {
         } else if (decoded.role === UserRole.CAPTAIN) {
           const captain = await Captain.findById(decoded.id);
           if (!captain) {
-            return error(res, APP_MESSAGES.AUTH.CAPTAIN_NOT_FOUND, 401);
+            return errorApi(res, APP_MESSAGES.AUTH.CAPTAIN_NOT_FOUND, 401);
           }
           req.captain = captain;
           req.user = captain;
           req.role = UserRole.CAPTAIN;
         } else {
-          return error(res, APP_MESSAGES.AUTH.INVALID_ROLE, 401);
+          return errorApi(res, APP_MESSAGES.AUTH.INVALID_ROLE, 401);
         }
       } else if (authType === "apiKey") {
         const partner = await Partner.findByRawApiKey(apiKey!);
         if (!partner) {
-          return error(res, APP_MESSAGES.AUTH.INVALID_API_KEY, 401);
+          return errorApi(res, APP_MESSAGES.AUTH.INVALID_API_KEY, 401);
         }
         req.partner = partner;
         req.user = partner;
@@ -66,16 +66,16 @@ export const protectedRoute = (roles: UserRole[] = []) => {
 
       // 3. Check roles if provided
       if (roles.length > 0 && !roles.includes(req.role as UserRole)) {
-        return error(res, APP_MESSAGES.AUTH.ROLE_NOT_AUTHORIZED(req.role as string), 403);
+        return errorApi(res, APP_MESSAGES.AUTH.ROLE_NOT_AUTHORIZED(req.role as string), 403);
       }
 
       next();
     } catch (err: any) {
       if (err.name === "JsonWebTokenError") {
-        return error(res, APP_MESSAGES.AUTH.INVALID_TOKEN, 401);
+        return errorApi(res, APP_MESSAGES.AUTH.INVALID_TOKEN, 401);
       }
       if (err.name === "TokenExpiredError") {
-        return error(res, APP_MESSAGES.AUTH.TOKEN_EXPIRED, 401);
+        return errorApi(res, APP_MESSAGES.AUTH.TOKEN_EXPIRED, 401);
       }
       next(err);
     }

@@ -20,7 +20,7 @@ export const seedOrders = async (captains: any[]) => {
     createdAt.setDate(now.getDate() - Math.floor(Math.random() * 60)); // Random date in last 60 days
 
     let captainId = null;
-    if (["assigned", "picked_up", "delivered"].includes(status)) {
+    if (["assigned", "picked_up", "delivered"].includes(status!)) {
       captainId = captains[Math.floor(Math.random() * captains.length)]._id;
     }
 

@@ -1,5 +1,5 @@
-import Partner from "../../models/Partner";
-import { BaseRepository } from "../base.repository";
+import Partner from "../models/Partner";
+import { BaseRepository } from "./base.repository";
 
 export class PartnerRepository extends BaseRepository<any> {
   constructor() {

@@ -1,4 +1,4 @@
-import orderRepository from "../../repositories/admin/order.repository";
+import orderRepository from "../../repositories/order.repository";
 
 export class PartnerOrderService {
   async createPartnerOrder(data: any, partnerId: string) {

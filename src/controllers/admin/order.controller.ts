@@ -1,15 +1,15 @@
 import { Request, Response } from "express";
 import adminOrderService from "../../services/admin/order.service";
-import { success, error } from "../../utils/apiResponse";
+import { errorApi, successApi } from "../../utils/apiResponse";
 import { APP_MESSAGES } from "../../utils/app-messages";
 
 export class AdminOrderController {
   async createOrder(req: Request, res: Response) {
     try {
       const result = await adminOrderService.createOrder(req.body);
-      return success(res, result, 201);
+      return successApi(res, result, 201);
     } catch (err: any) {
-      return error(res, err.message);
+      return errorApi(res, err.message);
     }
   }
 
@@ -43,36 +43,36 @@ export class AdminOrderController {
       }
 
       const result = await adminOrderService.getOrders(mongoFilters, sort, Number(page) || 1, Number(limit) || 20);
-      return success(res, result.items, 200, result.meta);
+      return successApi(res, result.items, 200, result.meta);
     } catch (err: any) {
-      return error(res, err.message);
+      return errorApi(res, err.message);
     }
   }
 
   async getOrderById(req: Request, res: Response) {
     try {
       const result = await adminOrderService.getOrderById(req.params.id as string);
-      return success(res, result);
+      return successApi(res, result);
     } catch (err: any) {
-      return error(res, err.message, 404);
+      return errorApi(res, err.message, 404);
     }
   }
 
   async updateOrder(req: Request, res: Response) {
     try {
       const result = await adminOrderService.updateOrder(req.params.id as string, req.body);
-      return success(res, result);
+      return successApi(res, result);
     } catch (err: any) {
-      return error(res, err.message);
+      return errorApi(res, err.message);
     }
   }
 
   async deleteOrder(req: Request, res: Response) {
     try {
       await adminOrderService.deleteOrder(req.params.id as string);
-      return success(res, { message: APP_MESSAGES.ORDER.DELETED });
+      return successApi(res, { message: APP_MESSAGES.ORDER.DELETED });
     } catch (err: any) {
-      return error(res, err.message);
+      return errorApi(res, err.message);
     }
   }
 }

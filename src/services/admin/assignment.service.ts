@@ -1,5 +1,5 @@
-import orderRepository from "../../repositories/admin/order.repository";
-import captainRepository from "../../repositories/captain/captain.repository";
+import orderRepository from "../../repositories/order.repository";
+import captainRepository from "../../repositories/captain.repository";
 import { APP_MESSAGES } from "../../utils/app-messages";
 import { OrderStatus } from "../../utils/constants";
 

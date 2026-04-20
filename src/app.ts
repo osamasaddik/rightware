@@ -8,6 +8,7 @@ import partnerRoutes from "./routes/partner";
 import captainRoutes from "./routes/captain";
 import { APP_MESSAGES } from "./utils/app-messages";
 import { APP_ROUTES } from "./routes/app-routes";
+import { errorApi, successApi } from "./utils/apiResponse";
 
 const createApp = () => {
   const app = express();
@@ -25,7 +26,12 @@ const createApp = () => {
 
   // Health check
   app.get(APP_ROUTES.HEALTH, (req, res) => {
-    res.status(200).json({ status: APP_MESSAGES.HEALTH.OK });
+    return successApi(res, { status: APP_MESSAGES.HEALTH.OK });
+  });
+
+  // 404 Handler - must be after all routes
+  app.use((req, res) => {
+    return errorApi(res, APP_MESSAGES.ERROR.ROUTE_NOT_FOUND(req.method, req.originalUrl), 404);
   });
 
   // Global Error Handler

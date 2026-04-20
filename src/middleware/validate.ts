@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { validationResult } from "express-validator";
-import { error } from "../utils/apiResponse";
+import { errorApi } from "../utils/apiResponse";
 import { APP_MESSAGES } from "../utils/app-messages";
 
 // @ts-ignore
@@ -11,7 +11,7 @@ export const validate = (req: Request, res: Response, next: NextFunction) => {
       field: err.path || err.param,
       message: err.msg,
     }));
-    return error(res, APP_MESSAGES.ERROR.VALIDATION_ERROR, 400, formattedErrors);
+    return errorApi(res, APP_MESSAGES.ERROR.VALIDATION_ERROR, 400, formattedErrors);
   }
   next();
 };

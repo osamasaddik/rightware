@@ -1,4 +1,4 @@
-import orderRepository from "../../repositories/admin/order.repository";
+import orderRepository from "../../repositories/order.repository";
 import { APP_MESSAGES } from "../../utils/app-messages";
 
 export class AdminOrderService {
@@ -35,7 +35,7 @@ export class AdminOrderService {
   async updateOrder(id: string, data: any) {
     const order = await orderRepository.findById(id);
     if (!order) throw new Error("Order not found");
-    
+
     if (["delivered", "cancelled"].includes(order.status)) {
       throw new Error("Cannot update delivered or cancelled orders");
     }

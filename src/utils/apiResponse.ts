@@ -13,7 +13,7 @@ export interface ApiResponse {
   errors?: Array<{ field: string; message: string }>;
 }
 
-export const success = (
+export const successApi = (
   res: Response,
   data: any,
   statusCode: number = 200,
@@ -28,7 +28,7 @@ export const success = (
   });
 };
 
-export const error = (res: Response, message: string, statusCode: number = 400, errors?: ApiResponse["errors"]) => {
+export const errorApi = (res: Response, message: string, statusCode: number = 400, errors?: ApiResponse["errors"]) => {
   return res.status(statusCode).json({
     success: false,
     message,

@@ -38,6 +38,7 @@ export const APP_MESSAGES = {
     TOKEN_EXPIRED: "Token expired",
     INTERNAL_SERVER_ERROR: "Internal server error",
     DUPLICATE_FIELD: (field: string) => `Duplicate field value: ${field}`,
+    ROUTE_NOT_FOUND: (method: string, url: string) => `Route ${method} ${url} not found`,
   },
   HEALTH: {
     OK: "ok",

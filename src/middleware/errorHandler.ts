@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { error } from "../utils/apiResponse";
+import { errorApi } from "../utils/apiResponse";
 import { APP_MESSAGES } from "../utils/app-messages";
 import config from "../config";
 
@@ -12,22 +12,22 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
       field: val.path,
       message: val.message,
     }));
-    return error(res, APP_MESSAGES.ERROR.VALIDATION_ERROR, 400, messages);
+    return errorApi(res, APP_MESSAGES.ERROR.VALIDATION_ERROR, 400, messages);
   }
 
   // Mongoose Duplicate Key Error
   if (err.code === 11000) {
     const field = Object.keys(err.keyValue)[0];
-    return error(res, APP_MESSAGES.ERROR.DUPLICATE_FIELD(field!), 409);
+    return errorApi(res, APP_MESSAGES.ERROR.DUPLICATE_FIELD(field!), 409);
   }
 
   // JWT Errors
   if (err.name === "JsonWebTokenError") {
-    return error(res, APP_MESSAGES.ERROR.TOKEN_INVALID, 401);
+    return errorApi(res, APP_MESSAGES.ERROR.TOKEN_INVALID, 401);
   }
 
   if (err.name === "TokenExpiredError") {
-    return error(res, APP_MESSAGES.ERROR.TOKEN_EXPIRED, 401);
+    return errorApi(res, APP_MESSAGES.ERROR.TOKEN_EXPIRED, 401);
   }
 
   // Default Error
@@ -37,5 +37,5 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
       ? APP_MESSAGES.ERROR.INTERNAL_SERVER_ERROR
       : err.message || APP_MESSAGES.ERROR.INTERNAL_SERVER_ERROR;
 
-  return error(res, message, statusCode);
+  return errorApi(res, message, statusCode);
 };

@@ -1,4 +1,4 @@
-import reportRepository from "../../repositories/admin/report.repository";
+import reportRepository from "../../repositories/report.repository";
 
 export class AdminReportService {
   async getOrderVolumeDrop(query: any) {
@@ -12,7 +12,7 @@ export class AdminReportService {
       page = 1,
       limit = 20,
       sortBy = "dropPercentage",
-      sortOrder = "desc"
+      sortOrder = "desc",
     } = query;
 
     const params = {
@@ -25,7 +25,7 @@ export class AdminReportService {
       page: Number(page),
       limit: Number(limit),
       sortBy: sortBy as string,
-      sortOrder: sortOrder as 'asc' | 'desc'
+      sortOrder: sortOrder as "asc" | "desc",
     };
 
     const result = await reportRepository.getOrderVolumeDrop(params);
@@ -36,8 +36,8 @@ export class AdminReportService {
         total: result.total,
         page: params.page,
         limit: params.limit,
-        totalPages: Math.ceil(result.total / params.limit)
-      }
+        totalPages: Math.ceil(result.total / params.limit),
+      },
     };
   }
 }

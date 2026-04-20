@@ -1,4 +1,4 @@
-import captainRepository from "../../repositories/captain/captain.repository";
+import captainRepository from "../../repositories/captain.repository";
 import { APP_MESSAGES } from "../../utils/app-messages";
 
 export class AdminCaptainService {
